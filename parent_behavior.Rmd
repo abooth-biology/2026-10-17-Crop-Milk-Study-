@@ -1,0 +1,538 @@
+---
+title: "Single Parent Pilot Behavior Analysis"
+output: html_notebook
+---
+###Necessary libraries
+```{r libraries}
+library(tidyverse)
+library(extrafont)
+library(cowplot)
+library(car)
+library(effsize)
+library(lme4)
+library(effectsize)
+library(emmeans)
+```
+
+```{r}
+# function to define the B3 lab theme
+theme_B3 <- function () { 
+  theme_classic() +
+    theme(
+      panel.grid.major  = element_blank(),  # remove major gridlines
+      panel.grid.minor  = element_blank(),  # remove minor gridlines
+      plot.subtitle = element_text(hjust = 0.5, face = "bold"), # center & bold
+      plot.title = element_text(hjust = 0.5, face = "bold") # center & bold 
+    )
+}
+```
+
+###Wrangle Data needed
+```{r figure out working directory}
+getwd()
+```
+#obtain raw data
+```{r reading csv file and formatting}
+behavior_d5 <- read.csv("/Users/AprilBooth/Desktop/Dissertation/Chapter2_cropmilk/R_markdowns/parent_behavior.csv")
+```
+
+# obtain count of samples in each treatment group
+```{r}
+behavior_d5 %>% count(treatment)
+```
+# make other sub-categories for analysis
+```{r changing treatment}
+behavior_d5$treatment[behavior_d5$treatment == "paired male"] <- "paired father"
+behavior_d5$treatment[behavior_d5$treatment == "single male"] <- "single father"
+behavior_d5$treatment[behavior_d5$treatment == "paired female"] <- "paired mother"
+behavior_d5$treatment[behavior_d5$treatment == "single female"] <- "single mother"
+```
+
+```{r get just sex category}
+behavior_d5$sex[behavior_d5$treatment == "paired father"] <- "male"
+behavior_d5$sex[behavior_d5$treatment == "single father"] <- "male"
+behavior_d5$sex[behavior_d5$treatment == "paired mother"] <- "female"
+behavior_d5$sex[behavior_d5$treatment == "single mother"] <- "female"
+```
+
+
+```{r get just nest type category}
+behavior_d5$type[behavior_d5$treatment == "paired father"] <- "paired parent"
+behavior_d5$type[behavior_d5$treatment == "single father"] <- "single parent"
+behavior_d5$type[behavior_d5$treatment == "paired mother"] <- "paired parent"
+behavior_d5$type[behavior_d5$treatment == "single mother"] <- "single parent"
+```
+# to look at cumulative time between paired nests vs single moms and single dads
+```{r}
+behavior_d5$cumm[behavior_d5$treatment == "paired father"] <- "paired parents"
+behavior_d5$cumm[behavior_d5$treatment == "single father"] <- "single father"
+behavior_d5$cumm[behavior_d5$treatment == "paired mother"] <- "paired parents"
+behavior_d5$cumm[behavior_d5$treatment == "single mother"] <- "single mother"
+```
+
+
+#generating cumulative time data-set.
+# make subsets of data
+```{r}
+paired <- behavior_d5[behavior_d5$type == "paired parent",]
+single <- behavior_d5[behavior_d5$type == "single parent",]
+```
+# make paired mom and paired dad sub sets for next step
+```{r}
+paired_f <- paired[paired$sex == "female",]
+paired_m <- paired[paired$sex == "male",]
+```
+
+# adding cumulative times of parents together for prospective behavior
+```{r}
+paired <- full_join(paired_f, paired_m, by = "nestid")
+paired$brooding_min <- paired$brooding_min.x + paired$brooding_min.y
+paired$feeding_min <- paired$feeding_min.x + paired$feeding_min.y
+paired$off_min <- paired$off_min.x + paired$off_min.y
+paired$in_min <- paired$in_min.x + paired$in_min.y
+```
+
+#selecting data for manuscript
+```{r}
+paired <- select(paired, "nestid","cumm.x", "type.x","brooding_min", "feeding_min", "off_min", "brood.x")
+paired$cumm <- paired$cumm.x
+paired$type <- paired$type.x
+paired$brood <- paired$brood.x
+single <- select(single, "nestid","cumm","type","brooding_min", "feeding_min", "off_min", "brood")
+```
+```{r}
+cumm_d5 <- full_join(paired, single, by= c("nestid","cumm", "type","brooding_min", "feeding_min", "off_min", "brood"))
+cumm_d5 <- select(cumm_d5, "nestid","cumm", "type","brooding_min", "feeding_min", "off_min", "brood")
+```
+
+### Brooding
+## cumulative brooding time
+```{r}
+brooding <- ggplot(aes(y = brooding_min,x = cumm, fill=cumm), data = cumm_d5) + ylim(0,650)+ geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent_cumm) +
+  labs(title = "", x="", y="cummulative time brooding (minutes)") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 14)) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list(c("single mother", "paired parents")), map_signif_level = TRUE, textsize = 9) + ggsignif::geom_signif(comparisons = list(c("single father", "paired parents")), map_signif_level = TRUE,y_position = c(600), textsize = 9) + scale_x_discrete(limits=c("paired parents", "single mother", "single father"))
+brooding
+```
+
+```{r}
+leveneTest(brooding_min ~ cumm, data = cumm_d5, center=mean)
+```
+```{r}
+leveneTest(brooding_min ~ brood, data = cumm_d5, center=mean)
+```
+# so rank transform better
+# when measure treatment
+```{r}
+fit_b <- aov(rank(brooding_min) ~ cumm+brood , data = cumm_d5)
+Anova(fit_b, type = "II")
+```
+
+```{r}
+eta_squared(Anova(fit_b, type = "II"))
+```
+```{r}
+TukeyHSD(fit_b)
+```
+# single moms and single dads contributed less cumulative time brooding than paired parents for the given time frame. no significant difference in terms of brood size. 
+
+#determining effect size
+# make subsets of data
+```{r}
+paired <- cumm_d5[cumm_d5$cumm == "paired parents",]
+smom <- cumm_d5[cumm_d5$cumm == "single mother",]
+sdad <- cumm_d5[cumm_d5$cumm == "single father",]
+```
+# paired v single-mothered
+```{r}
+paired_v_smom <- full_join(paired,smom)
+cohens_d(brooding_min ~ cumm, data = paired_v_smom)
+```
+
+#paired parents v single dads
+```{r}
+paired_v_sdad <- full_join(paired,sdad)
+cohens_d(brooding_min ~ cumm, data = paired_v_sdad)
+```
+
+## nest type
+```{r}
+leveneTest(brooding_min ~ type, data = cumm_d5, center=mean)
+```
+# so non-parametric better
+# when measure treatment
+```{r}
+fit_b_s <- aov(rank(brooding_min) ~ type+brood, data = cumm_d5)
+Anova(fit_b_s, type = "II")
+```
+
+```{r}
+eta_squared(Anova(fit_b_s, type = "II"))
+```
+# so significant difference by nest type
+# so on the whole single parents can't maintain brooding levels of paired-parent nests. 
+
+# by treatment groups (paired moms, paired dads, single moms, single dads)
+
+```{r}
+brooding_t <- ggplot(aes(y = brooding_min,x = treatment, fill=treatment), data = behavior_d5) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent) +
+  labs(title = "", x="", y="time brooding (minutes)") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 14)) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list(c("single mother", "paired mother")), map_signif_level = TRUE, y_position = c(600),textsize = 9) + ggsignif::geom_signif(comparisons = list(c("paired father", "paired mother")), map_signif_level = TRUE,y_position = c(400), textsize = 9) + ggsignif::geom_signif(comparisons = list(c("paired father", "single father")), map_signif_level = TRUE,y_position = c(730), textsize = 9) +  ylim(0,790) + scale_x_discrete(limits=c("paired mother","paired father","single mother", "single father"))
+brooding_t
+```
+
+```{r}
+leveneTest( brooding_min ~ treatment, data = behavior_d5, center=mean)
+```
+```{r}
+leveneTest(brooding_min ~ brood, data = behavior_d5, center=mean)
+```
+```{r}
+leveneTest(brooding_min ~ type, data = behavior_d5, center=mean)
+```
+```{r}
+leveneTest(brooding_min ~ sex, data = behavior_d5, center=mean)
+```
+#parametric ok for treatment and brood size
+```{r}
+lmer_brood <- lmer(brooding_min ~ treatment+brood+(1 | nestid), data = behavior_d5, REML = TRUE)
+Anova(lmer_brood, type = "II", test = "F")
+```
+
+```{r}
+eta_squared(Anova(lmer_brood, type = "II", test = "F"))
+```
+
+```{r}
+emmeans(lmer_brood, list(pairwise ~ treatment), adjust="tukey") 
+```
+# so significant difference between paired mothers vs paired fathers, single mothers, and single fathers. Paired dads spend less time tending chicks compared to single mothers and single fathers.The difference between paired fathers vs single fathers really highlights how single fathers are adjusting there behavior to try and make up for the loss of there partner. There is also a significant difference between paired mothers and single mothers, highlighting how they are shifting their behavior as well. 
+
+#cohen's d
+# make subsets of data
+```{r}
+pmom <- behavior_d5[behavior_d5$treatment == "paired mother",]
+pdad <- behavior_d5[behavior_d5$treatment == "paired father",]
+smom <- behavior_d5[behavior_d5$treatment == "single mother",]
+sdad <- behavior_d5[behavior_d5$treatment == "single father",]
+```
+# paired moms v paired dads
+```{r}
+pmom_v_pdad <- full_join(pmom,pdad)
+cohens_d(brooding_min ~ treatment, data = pmom_v_pdad)
+```
+# paired  moms v single moms
+```{r}
+pmom_v_smom <- full_join(pmom,smom)
+cohens_d(brooding_min ~ treatment, data = pmom_v_smom)
+```
+
+# paired fathers v single mothers
+```{r}
+pdad_v_smom <- full_join(pdad,smom)
+cohens_d(brooding_min ~ treatment, data = pdad_v_smom)
+```
+
+#paired fathers v single fathers
+```{r}
+pdad_v_sdad <- full_join(pdad,sdad)
+cohens_d(brooding_min ~ treatment, data = pdad_v_sdad)
+```
+#by nest type and sex. rank transform due to sex
+```{r}
+fit_brood_t <- aov(rank(brooding_min) ~ type*sex, data= behavior_d5)
+Anova(fit_brood_t, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_brood_t, type = "II"))
+```
+### Off
+## cumulative off time
+```{r}
+off <- ggplot(aes(y = off_min,x = cumm, fill=cumm), data = cumm_d5) + ylim(0,700)+ geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent_cumm) +
+  labs(title = "", x="", y="cummulative time off the nest (minutes)") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list(c("single mother", "paired parents")), map_signif_level = TRUE, textsize = 9) + ggsignif::geom_signif(comparisons = list(c("single father", "paired parents")), map_signif_level = TRUE,y_position = c(625), textsize = 9) + scale_x_discrete(limits=c("paired parents", "single mother", "single father"))
+off
+```
+
+```{r}
+leveneTest(off_min ~ cumm, data = cumm_d5, center=mean)
+```
+```{r}
+leveneTest(off_min ~ brood, data = cumm_d5, center=mean)
+```
+# so parametric fine
+```{r}
+fit_o <- aov(off_min ~ cumm+brood , data = cumm_d5)
+Anova(fit_o, type = "II")
+```
+
+```{r}
+eta_squared(Anova(fit_o, type = "II"))
+```
+```{r}
+TukeyHSD(fit_o)
+```
+# single moms and single dads spent less time off the nest than paired parents for the given time frame. no significant difference in terms of brood size. 
+
+#determining effect size
+# make subsets of data
+```{r}
+paired <- cumm_d5[cumm_d5$cumm == "paired parents",]
+smom <- cumm_d5[cumm_d5$cumm == "single mother",]
+sdad <- cumm_d5[cumm_d5$cumm == "single father",]
+```
+# paired v single-mothered
+```{r}
+paired_v_smom <- full_join(paired,smom)
+cohens_d(off_min ~ cumm, data = paired_v_smom)
+```
+
+#paired parents v single dads
+```{r}
+paired_v_sdad <- full_join(paired,sdad)
+cohens_d(off_min ~ cumm, data = paired_v_sdad)
+```
+
+## nest type
+```{r}
+leveneTest(off_min ~ type, data = cumm_d5, center=mean)
+```
+# so parametric fine
+```{r}
+fit_o_s <- aov(off_min ~ type+brood , data = cumm_d5)
+Anova(fit_o_s, type = "II")
+```
+
+```{r}
+eta_squared(Anova(fit_o_s, type = "II"))
+```
+
+## by individual treatment groups
+```{r}
+off_t <- ggplot(aes(y = off_min,x = treatment, fill=treatment ), data = behavior_d5) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent) +
+  labs(title = "", x="", y="cummulative time off the nest (minutes)") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list(c("single mother", "paired mother")), map_signif_level = TRUE, y_position = c(650), textsize = 9) + ggsignif::geom_signif(comparisons = list(c("paired father", "paired mother")), map_signif_level = TRUE, y_position = c(450), textsize = 9) + ggsignif::geom_signif(comparisons = list(c("paired father", "single father")), map_signif_level = TRUE, y_position = c(550), textsize = 9) +  ylim(0,700) + scale_x_discrete(limits=c("paired mother","paired father", "single mother", "single father"))
+off_t
+```
+
+```{r}
+leveneTest(off_min ~ treatment, data = behavior_d5, center=mean)
+```
+```{r}
+leveneTest(off_min ~ brood, data = behavior_d5, center=mean)
+```
+```{r}
+leveneTest(off_min ~ type, data = behavior_d5, center=mean)
+```
+
+```{r}
+leveneTest(off_min ~ sex, data = behavior_d5, center=mean)
+```
+# so parametric fine for analyses 
+
+# treatment groups
+```{r}
+lmer_off <- lmer(off_min ~ treatment+brood+(1 | nestid), data = behavior_d5, REML = TRUE)
+Anova(lmer_off, type = "II", test = "F")
+```
+
+```{r}
+eta_squared(Anova(lmer_off, type = "II", test = "F"))
+```
+# so significant difference by treatment group. 
+```{r}
+emmeans(lmer_off, list(pairwise ~ treatment), adjust="tukey") 
+```
+
+# cohen's d 
+# make subsets of data
+```{r}
+pmom <- behavior_d5[behavior_d5$treatment == "paired mother",]
+pdad <- behavior_d5[behavior_d5$treatment == "paired father",]
+smom <- behavior_d5[behavior_d5$treatment == "single mother",]
+sdad <- behavior_d5[behavior_d5$treatment == "single father",]
+```
+# paired father vs paired mother
+```{r}
+pdad_v_pmom <- full_join(pmom,pdad)
+cohens_d(off_min ~ treatment, data = pdad_v_pmom)
+```
+# paired fathers vs single fathers
+```{r}
+pdad_v_sdad <- full_join(sdad,pdad)
+cohens_d(off_min ~ treatment, data = pdad_v_sdad)
+```
+# paired fathers vs single mothers
+```{r}
+pdad_v_smom <- full_join(smom,pdad)
+cohens_d(off_min ~ treatment, data = pdad_v_smom)
+```
+# paired mothers vs single fathers
+```{r}
+pmom_v_sdad <- full_join(pmom,sdad)
+cohens_d(off_min ~ treatment, data = pmom_v_sdad)
+```
+# paired mothers vs single mothers
+```{r}
+pmom_v_smom <- full_join(pmom,smom)
+cohens_d(off_min ~ treatment, data = pmom_v_smom)
+```
+#nest-type and sex
+
+```{r}
+fit_off <- aov(off_min ~ type*sex, data=behavior_d5)
+Anova(fit_off, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_off, type = "II"))
+```
+### Feeding
+# determine if should divide two-chick nests by 2 in regards to provisioning time
+```{r}
+brood <- ggplot(aes(y = feeding_min,x = brood, fill=brood), data = cumm_d5) + geom_boxplot(outlier.shape = NA) +
+  labs(title = "", x="", y="time feeding") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list( c("one", "two")), map_signif_level = TRUE, textsize = 9) +  ylim(0,100)
+brood
+```
+```{r}
+leveneTest(feeding_min ~ brood, data = cumm_d5, center=mean)
+```
+# so non-parametric test better
+```{r}
+t.test(feeding_min ~ brood, data = cumm_d5, var.equal = FALSE)
+```
+```{r}
+cohens_d(feeding_min ~ brood, data = cumm_d5)
+```
+# so should divide two chick nests by 2 for feeding time. 
+
+# for cumulative time:
+# making separate data sets. 
+```{r}
+two_feed <- cumm_d5[cumm_d5$brood == "two",]
+one_feed <- cumm_d5[cumm_d5$brood == "one",]
+```
+# divide feedingavg by 2 for two brood nests
+```{r}
+two_feed$feeding_min <- (two_feed$feeding_min)/2
+```
+# rejoin data sets
+```{r}
+feed <- full_join(two_feed,one_feed)
+feed$type[feed$type == "single parent"] <- "single parent"
+feed$type[feed$type == "paired parent"] <- "paired parents"
+```
+
+# for treatment groups:
+```{r}
+two <- behavior_d5[behavior_d5$brood == "two",]
+one <- behavior_d5[behavior_d5$brood == "one",]
+```
+# divide feedingavg by 2 for two brood nests
+```{r}
+two$feeding_min <- (two$feeding_min)/2
+```
+# rejoin data sets
+```{r}
+feed_treat <- full_join(two,one)
+```
+
+# now visualize and analyze cumulative data
+```{r}
+feeding <- ggplot(aes(y = feeding_min,x = cumm, fill=cumm), data = feed) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent_cumm) +
+  labs(title = "", x="", y="cummulative time feeding (minutes)") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 14)) + theme(legend.position = "none") + scale_x_discrete(limits=c("paired parents", "single mother", "single father")) + ggsignif::geom_signif(comparisons = list( c("paired parents", "single mother")), map_signif_level = TRUE, textsize = 9) +  ylim(0,50)
+feeding
+```
+```{r}
+leveneTest(feeding_min ~ cumm, data = feed, center=mean)
+```
+
+```{r}
+leveneTest(feeding_min ~ brood, data = feed, center=mean)
+```
+# so parametric ok
+```{r}
+fit_f <- aov(feeding_min ~ cumm+brood, data = feed)
+Anova(fit_f, type = "II")
+```
+
+```{r}
+eta_squared(Anova(fit_f, type = "II"))
+```
+# so significant difference in cumulative feeding time between treatment groups
+```{r}
+TukeyHSD(fit_f)
+```
+#cohen's d
+# make subsets of data
+```{r}
+paired <- feed[feed$cumm == "paired parents",]
+smom <- feed[feed$cumm == "single mother",]
+sdad <- feed[feed$cumm == "single father",]
+```
+# single moms v paired dads
+```{r}
+smom_v_pair <- full_join(smom,paired)
+cohens_d(feeding_min ~ cumm, data = smom_v_pair)
+```
+# so significant difference between single mothers and paired parent nests
+
+## by nest type
+```{r}
+feed_n <- ggplot(aes(y = feeding_min,x = type, fill=type), data = feed) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent_pool) +
+  labs(title = "", x="", y="cummulative time feeding (minutes)") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 14)) + theme(legend.position = "none") + scale_x_discrete(limits=c("paired parents", "single parent")) + ggsignif::geom_signif(comparisons = list( c("paired parents", "single parent")), map_signif_level = TRUE, textsize = 9) +  ylim(0,50)
+feed_n
+```
+```{r}
+leveneTest(feeding_min ~ type, data = feed, center=mean)
+```
+# so better to rank-transform
+```{r}
+fit_f_s <- aov(rank(feeding_min) ~ type+brood , data = feed)
+Anova(fit_f_s, type = "II")
+```
+
+```{r}
+eta_squared(Anova(fit_f_s, type = "II"))
+```
+# When pooled by nest-type, paired-parented chicks received more time getting fed than single-parented chicks in general.
+
+# what about between parents/ treatment groups? 
+```{r}
+feeding_t <- ggplot(aes(y = feeding_min,x = treatment, fill=treatment), data = feed_treat) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent) +
+  labs(title = "", x="", y="time feeding (minutes)") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none") + scale_x_discrete(limits=c("paired mother","paired father","single mother", "single father"))
+feeding_t
+```
+# will need to remember to add letters to indicate sex difference.
+```{r}
+leveneTest(feeding_min ~ treatment, data = feed_treat, center=mean)
+```
+```{r}
+leveneTest(feeding_min ~ brood, data = feed_treat, center=mean)
+```
+```{r}
+leveneTest(feeding_min ~ type, data = feed_treat, center=mean)
+```
+```{r}
+leveneTest(feeding_min ~ sex, data = feed_treat, center=mean)
+```
+
+```{r}
+lmer_feed <- lmer(feeding_min ~ treatment+brood+(1 | nestid), data = feed_treat, REML = TRUE)
+Anova(lmer_feed, type = "II", test = "F")
+```
+
+```{r}
+eta_squared(Anova(lmer_feed, type = "II", test = "F"))
+```
+#by nest type and sex. 
+```{r}
+fit_feed_t <- aov(feeding_min ~ type*sex, data=feed_treat)
+Anova(fit_feed_t, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_feed_t, type = "II"))
+```
+#so significant difference by sex, with moms spending less time feeding the chicks that dads for the time frame scored. 
+
+###Compiling figures together
+```{r}
+plot_grid(brooding_t, brooding, off, feeding_t,feeding, labels = "AUTO", ncol = 2, align = "hv")
+```
+
+

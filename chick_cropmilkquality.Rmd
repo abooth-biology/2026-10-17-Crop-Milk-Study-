@@ -1,0 +1,333 @@
+---
+title: "Crop milk analysis- chicks"
+author: "April Booth"
+date: "11/9/2021"
+output: html_document
+---
+
+### Getting started
+```{r}
+library(tidyverse)
+library(extrafont)
+library(cowplot)
+library(car)
+library(lme4)
+library(effectsize)
+```
+
+```{r}
+# function to define the B3 lab theme
+theme_B3 <- function () { 
+  theme_classic() +
+    theme(
+      panel.grid.major  = element_blank(),  # remove major gridlines
+      panel.grid.minor  = element_blank(),  # remove minor gridlines
+      plot.subtitle = element_text(hjust = 0.5, face = "bold"), # center & bold
+      plot.title = element_text(hjust = 0.5, face = "bold") # center & bold 
+    )
+}
+```
+```{r figure out working directory}
+getwd()
+```
+
+#Get general data together:
+```{r}
+data_chk <- read.csv("/Users/AprilBooth/Desktop/Dissertation/Chapter2_cropmilk/R_markdowns/chick_cropmilkquality.csv")
+key <- read.csv("/Users/AprilBooth/Desktop/Dissertation/keys/chick_key.csv")
+# add nest type category
+data_chk$type[data_chk$parental_state == "paired"] <- "paired parents"
+data_chk$type[data_chk$parental_state == "single male"] <- "single parent"
+data_chk$type[data_chk$parental_state == "single female"] <- "single parent"
+
+# get brood size
+data_chk <- left_join(data_chk, key, by = "nestid")
+data_chk <- na.omit(data_chk)
+```
+# obtain average for two chick nests
+```{r get average for two chick nests}
+one <- data_chk[data_chk$brood == "one",]
+two <- data_chk[data_chk$brood == "two",]
+twoa <- two[two$chick == "a",]
+twob <- two[two$chick == "b",]
+two <- full_join(twoa, twob, by = "nestid")
+two$crop_milk_mass_g <- (two$crop_milk_mass_g.x + two$crop_milk_mass_g.y)/2
+two$color <- (two$color.x+ two$color.y)/2
+two$consistency <- (two$consistency.x+ two$consistency.y)/2
+two$brood <- two$brood.x
+two$treatment <- two$treatment.x
+two$type <- two$type.x
+two <- select(two, "nestid", "brood", "crop_milk_mass_g","color","consistency", "treatment", "type")
+```
+# counting two-chick and one-chick broods
+```{r}
+twoa %>% count(treatment)
+```
+```{r}
+one %>% count(treatment)
+```
+# getting data-set formatted
+```{r}
+data_chk_avg <- full_join(one, two)
+data_chk_avg<- select(data_chk_avg, "nestid", "brood","treatment", "type", "crop_milk_mass_g","color","consistency")
+# change name for treatment
+data_chk_avg$treatment[data_chk_avg$treatment == "single male"] <- "single father"
+data_chk_avg$treatment[data_chk_avg$treatment == "single female"] <- "single mother"
+data_chk_avg$treatment[data_chk_avg$treatment == "paired"] <- "paired parents"
+```
+
+###Crop content weight
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+cropmilk_mass <- ggplot(aes(y = crop_milk_mass_g, x = treatment, fill=treatment), data = data_chk_avg) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_chick) + scale_x_discrete(limits=c("paired parents", "single mother", "single father")) +
+  labs(title = "Average weight of crop milk ingested by chicks", x="", y="crop milk weight (g)") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=12)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list(c("single father", "paired parents")), map_signif_level = TRUE, y_position = (22), textsize = 9) + ggsignif::geom_signif(comparisons = list(c("single father", "single mother")), map_signif_level = TRUE, y_position = (18), textsize = 9) + ylim(0,25) 
+cropmilk_mass
+```
+# will remove single father outlier
+```{r}
+#remove outlier
+data_chk_avg <- data_chk_avg[-c(15), ]
+```
+
+```{r}
+leveneTest(crop_milk_mass_g ~ treatment, data = data_chk_avg, center = "mean")
+```
+```{r}
+leveneTest(crop_milk_mass_g ~ brood, data = data_chk_avg, center = "mean")
+```
+#So should rank transform.
+```{r}
+fit_mass <- aov(rank(crop_milk_mass_g) ~ treatment+brood, data = data_chk_avg)
+Anova(fit_mass, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_mass, type = "II"))
+```
+
+```{r}
+TukeyHSD(fit_mass)
+```
+# so significant difference between single fathered and paired parented chicks and single fathered and single mothered chicks if remove single father outlier.
+
+# obtain effect size
+```{r}
+paired <- data_chk_avg[data_chk_avg$treatment == "paired parents",]
+s_mom <- data_chk_avg[data_chk_avg$treatment == "single mother",]
+s_fath <- data_chk_avg[data_chk_avg$treatment == "single father",]
+```
+
+# paired parented v single fathered
+```{r}
+p_vs_sfath <- full_join(paired, s_fath)
+cohens_d(crop_milk_mass_g ~ treatment, data = p_vs_sfath)
+```
+
+# single mothered v single fathered
+```{r}
+smom_vs_sfath <- full_join(s_mom, s_fath)
+cohens_d(crop_milk_mass_g ~ treatment, data = smom_vs_sfath)
+```
+
+# by nest type?
+```{r}
+leveneTest(crop_milk_mass_g ~ type, data = data_chk_avg, center = mean)
+```
+
+#still rank transform due to brood size
+```{r}
+fit_mass_s <- aov(rank(crop_milk_mass_g) ~ type+brood, data = data_chk_avg)
+Anova(fit_mass_s, type = "II")
+```
+
+```{r}
+eta_squared(Anova(fit_mass_s, type = "II"))
+```
+# no difference by nest type. 
+
+### asychronous nests
+```{r}
+twoa$treatment[twoa$treatment == "single male"] <- "single father"
+twoa$treatment[twoa$treatment == "single female"] <- "single mother"
+twob$treatment[twob$treatment == "single male"] <- "single father"
+twob$treatment[twob$treatment == "single female"] <- "single mother"
+```
+
+```{r}
+asynch_a <- ggplot(aes(y = crop_milk_mass_g, x = treatment, fill=treatment), data = twoa) + geom_boxplot(outlier.shape = NA) +
+  labs(title = "Weight ingested by first-hatched chicks (two-chick nests)", x="", y="crop milk weight (g)") + scale_fill_manual(values = colors_chick) + theme_B3() + theme(text=element_text(family="Arial", size=12)) +theme(axis.text = element_text(face = "bold", color = "black",family="", size = 12)) +  geom_point(pch = 21, position = position_jitterdodge()) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list(c("paired parents", "single father")), map_signif_level = TRUE, y_position = c(17), textsize = 9) + scale_x_discrete(limits=c("paired parents", "single mother", "single father")) + ylim(0,22)
+asynch_a
+```
+# removing single father outlier nest.
+```{r}
+#remove outliers
+twoa <- twoa[-c(6), ]
+```
+
+```{r}
+leveneTest(crop_milk_mass_g ~ treatment, data = twoa, center = mean)
+```
+
+```{r}
+fit_a <- aov(crop_milk_mass_g ~ treatment, data = twoa)
+Anova(fit_a)
+```
+```{r}
+eta_squared(fit_a)
+```
+```{r}
+TukeyHSD(fit_a)
+```
+
+# cohen's d
+```{r}
+paired <- twoa[twoa$treatment == "paired parents",]
+smom <- twoa[twoa$treatment == "single mother",]
+sfath <- twoa[twoa$treatment == "single father",]
+```
+# single fathers vs paired parents
+```{r}
+sfath_vs_paired <- full_join(paired, sfath)
+cohens_d(crop_milk_mass_g ~ treatment, data = sfath_vs_paired)
+```
+# nest-type
+
+```{r}
+leveneTest(crop_milk_mass_g ~ type, data = twoa, center = mean)
+```
+
+```{r}
+t.test(crop_milk_mass_g ~ type, data = twoa, var.equal = TRUE)
+```
+# cohen's d
+```{r}
+cohens_d(crop_milk_mass_g ~ type, data = twoa)
+```
+
+# second hatched
+```{r}
+asynch_b <- ggplot(aes(y = crop_milk_mass_g, x = treatment, fill=treatment), data = twob) + geom_boxplot(outlier.shape = NA) +
+  labs(title = "Weight ingested by second-hatched chicks (two-chick nests)", x="", y="crop milk weight (g)") + scale_fill_manual(values = colors_chick) + theme_B3() + theme(text=element_text(family="Arial", size=12)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) +  geom_point(pch = 21, position = position_jitterdodge()) + theme(legend.position = "none") + scale_x_discrete(limits=c("paired parents", "single mother", "single father")) + ggsignif::geom_signif(comparisons = list(c("paired parents", "single father")), map_signif_level = TRUE, y_position = c(12), textsize = 9) + ylim(0,14)
+asynch_b
+```
+```{r}
+asynch_b_t <- ggplot(aes(y = crop_milk_mass_g, x = type, fill=type), data = twob) + geom_boxplot(outlier.shape = NA) +
+  labs(title = "", x="", y="crop milk weight (g)") + scale_fill_manual(values = colors_chick_pool) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) +  geom_point(pch = 21, position = position_jitterdodge()) + theme(legend.position = "none") + scale_x_discrete(limits=c("paired parents", "single parent")) + ggsignif::geom_signif(comparisons = list(c("paired parents", "single parent")), map_signif_level = TRUE, y_position = c(12), textsize = 9) + ylim(0,14)
+asynch_b_t
+```
+```{r}
+#remove outliers
+twob <- twob[-c(6), ]
+```
+
+```{r}
+leveneTest(crop_milk_mass_g ~ treatment, data = twob, center = mean)
+```
+
+```{r}
+fit_b <- aov(crop_milk_mass_g ~ treatment, data = twob)
+Anova(fit_b, type= "III")
+```
+```{r}
+eta_squared(fit_b)
+```
+```{r}
+TukeyHSD(fit_b)
+```
+
+# cohen's d
+```{r}
+paired <- twob[twob$treatment == "paired parents",]
+smom <- twob[twob$treatment == "single mother",]
+sfath <- twob[twob$treatment == "single father",]
+```
+# paired parents vs single fathers
+```{r}
+paired_vs_sfath <- full_join(paired, sfath)
+cohens_d(crop_milk_mass_g ~ treatment, data = paired_vs_sfath)
+```
+# nest-type
+```{r}
+leveneTest(crop_milk_mass_g ~ type, data = twob, center = mean)
+```
+
+```{r}
+t.test(crop_milk_mass_g ~ type, data = twob, var.equal = TRUE)
+```
+# cohen's d
+```{r}
+cohens_d(crop_milk_mass_g ~ type, data = twob)
+```
+
+### Histograms
+```{r}
+paired <- data_chk_avg[data_chk_avg$treatment == "paired parents",]
+s_mom <- data_chk_avg[data_chk_avg$treatment == "single mother",]
+s_fath <- data_chk_avg[data_chk_avg$treatment == "single father",]
+```
+### Color
+```{r}
+color_ppar <- ggplot(aes(paired$color, fill=treatment), data = paired) + stat_count(width = 0.5, color = "black") + xlim(0.5,3) + ylim(0,8) + scale_fill_manual(values = colors_chick) + labs(title = "crop milk color",subtitle = "", x="", y="Count") + theme_B3() + theme(text=element_text(family="Arial", size=12)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none")
+color_ppar
+```
+
+```{r}
+color_smom <- ggplot(aes(s_mom$color, fill=treatment), data = s_mom) + stat_count(width = 0.5, color = "black") + xlim(0.5,3) + ylim(0,8) + scale_fill_manual(values = colors_chick) + labs(title = "", x="", y="Count") + theme_B3() + theme(text=element_text(family="Arial", size=12)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none")
+color_smom
+```
+
+```{r}
+color_sfath <- ggplot(aes(s_fath$color, fill=treatment), data = s_fath) + stat_count(width = 0.5, color = "black") + xlim(0.5,3) + ylim(0,8) + scale_fill_manual(values = colors_chick) + labs(title = "", x="crop milk color rankings", y="Count") + theme_B3() + theme(text=element_text(family="Arial", size=12)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none")
+color_sfath
+```
+```{r}
+tbl_color <- table(data_chk_avg$treatment, data_chk_avg$color)
+tbl_color
+```
+
+```{r}
+fisher.test(tbl_color, simulate.p.value = FALSE, hybrid = TRUE)
+```
+# effect size
+```{r}
+cramers_v(tbl_color)
+```
+
+# so no significant difference in crop milk color between treatment groups.
+
+### Consistency
+
+```{r}
+consistency_ppar <- ggplot(aes(paired$consistency, fill=treatment), data = paired) + xlim(0.5,4) + ylim(0,10) + stat_count(width = 0.5, color = "black") + scale_fill_manual(values = colors_chick) + labs(title = "crop milk consistency",subtitle = "", x="", y="Count") + theme_B3() + theme(text=element_text(family="Arial", size=12)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "right")
+consistency_ppar
+```
+
+```{r}
+consistency_smom <- ggplot(aes(s_mom$consistency, fill=treatment), data = s_mom) + stat_count(width = 0.5, color = "black") + xlim(0.5,4) + ylim(0,10) + scale_fill_manual(values = colors_chick) + labs(title = "", x="", y="Count") + theme_B3() + theme(text=element_text(family="Arial", size=12)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "right")
+consistency_smom
+```
+
+```{r}
+consistency_sfath <- ggplot(aes(s_fath$consistency, fill=treatment), data = s_fath) + stat_count(width = 0.5, color = "black") + xlim(0.5,4) + ylim(0,10) + scale_fill_manual(values = colors_chick) + labs(title = "", x="crop milk consistency rankings", y="Count") + theme_B3() + theme(text=element_text(family="Arial", size=12)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "right")
+consistency_sfath
+```
+
+```{r}
+tbl_consistency <- table(data_chk$treatment, data_chk$consistency)
+tbl_consistency
+```
+
+```{r}
+fisher.test(tbl_consistency, simulate.p.value = FALSE, hybrid = TRUE)
+```
+
+```{r}
+cramers_v(tbl_consistency)
+```
+
+### Compiling Color and consistency figures
+```{r}
+plot_grid(cropmilk_mass, asynch_a, asynch_b, labels = "AUTO")
+```
+
+```{r}
+plot_grid(color_ppar, color_smom, color_sfath,consistency_ppar,consistency_smom, consistency_sfath, labels = "AUTO", ncol = 2, byrow = FALSE, align = "h")
+```

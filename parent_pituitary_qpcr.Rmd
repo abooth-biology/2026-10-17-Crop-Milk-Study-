@@ -1,0 +1,860 @@
+---
+title: "qpcr-processing-scripts- qpcr_general_processing_script, day 5 Stolzenberg method"
+output: html_notebook
+---
+
+### qPCR DATA PROCESSING - FUNCTIONIZED SCRIPT
+#Author: Victoria Farrar
+#Created: 12/5/2020, Last Updated: 2/2/2022
+#save this as a unique doc for each project
+# check out Victoria's git hub page for the README doc:gene
+https://github.com/vsfarrar/qpcr-processing-scripts/find/main
+#modified to reflect Stolzenberg method of qPCR analysis by April Booth 06/03/2022
+
+###################### EDIT HERE ############################
+#0. import needed libraries and background for figures
+#get needed libraries
+```{r #get needed libraries}
+library(tidyverse)
+library(extrafont)
+library(cowplot)
+library(car)
+library(lme4)
+library(effectsize)
+library(broom)
+library(effects)
+```
+```{r}
+# function to define the B3 lab theme
+theme_B3 <- function () { 
+  theme_classic() +
+    theme(
+      panel.grid.major  = element_blank(),  # remove major gridlines
+      panel.grid.minor  = element_blank(),  # remove minor gridlines
+      plot.subtitle = element_text(hjust = 0.5, face = "bold"), # center & bold
+      plot.title = element_text(hjust = 0.5, face = "bold") # center & bold 
+    )
+}
+```
+#1.obtain raw data.
+```{r}
+raw_data <- read.csv("/Users/AprilBooth/Desktop/Dissertation/Chapter2_cropmilk/R_markdowns/qpcr_pit_compile.csv", stringsAsFactors = F)
+```
+#2.import key with relevant treatment groups for ddCT method 
+  #key MUST have the following columns: sample, treatment 
+```{r}
+key <-read.csv("/Users/AprilBooth/Desktop/Dissertation/keys/parent_key.csv")
+```
+
+#3. define your control group (level of treatment that matches key above)
+```{r}
+control_group <- "paired female"
+```
+
+#4. define project / sample name 
+```{r}
+project_name <- "singleparent-pits-d5"
+```
+
+#5. [OPTIONAL] if you want to normalize to specific reference genes, list names here
+```{r}
+custom_refgenes <- c("hprt1", "rpl4")
+```
+
+#6. Clean then generate log_fold change data
+######################################################################
+```{r}
+#load packages
+#use pacman to install and load all packages required
+if (!require("pacman")) install.packages("pacman") #install pacman if not already installed
+pacman::p_load(tidyverse, dplyr,broom,naniar)
+
+#source functions
+source("/Users/AprilBooth/Desktop/Dissertation/codeANDdatasets_Chapter2and3/qpcr_processing_functions_NOCHANGE.R")
+
+#clean and join data 
+colnames(raw_data) <- tolower(colnames(raw_data))
+raw_data2 <- 
+  raw_data %>%
+  mutate(gene = tolower(gene)) %>% #all lowercase genes 
+  replace_with_na(replace = list(gene = "")) %>% #blank to NA
+  drop_na(gene) 
+
+#join with project key 
+#adds treatment group for normalizing expression 
+
+colnames(key) <- tolower(colnames(key))
+
+dat_joined <- inner_join(raw_data2, key) #joins by "sample"
+
+#clean triplicates
+dat_clean <- clean_triplicates(dat_joined)
+
+#average cq across triplicates (returns 1 avg cq value for each sample:gene)
+dat_avg <- avg_triplicates(dat_clean)
+```
+#7. get dct values.
+```{r}
+#get average reference gene and dct
+dat_dct <- 
+  dat_avg %>%
+  group_by(sample) %>%
+  mutate(is_ref = ifelse(gene %in% reference_genes, 1, 0),
+         ref_gene = mean(mean_cq[gene %in% custom_refgenes], na.rm = T)) %>% #get average reference gene
+  mutate(dct = mean_cq - ref_gene) #calculate dct
+# make subset for 449
+dat_449 <- subset(dat_dct, sample == 449) # copy and paste the dct values when determining ddct for step #9
+```
+
+
+#8 get Rq_norm values
+```{r}
+#just need one set
+dat_gr <- subset(dat_dct, gene == "gr")
+
+# subtract one paired dct control from all the treatment groups
+dat_ddct <-
+  dat_gr %>% 
+  mutate(ddct = dct - 4.192441) # using paired female 449
+
+
+# get fold change (rq)
+dat_qpcr <- 
+  dat_ddct %>%
+  group_by(sample, gene) %>%
+  mutate(rq = 2^-(ddct)) %>%
+  ungroup()
+
+#get dataframe of controls 
+control_genes <- 
+  dat_qpcr %>%
+  group_by(gene) %>%
+  summarise(control_rq = mean(rq[treatment == control_group], na.rm = T)) # control = average rq for vehicle group
+
+#join with control data by genes
+dat_ddct_controls <- left_join(dat_qpcr, control_genes) #joins by gene
+
+# FINAL PRODUCT: normalize rq, get log(rq_norm)
+dat_gr_qpcr_final <- 
+  dat_ddct_controls %>%
+  group_by(sample, gene) %>%
+  mutate(rq_norm = rq/control_rq,
+         log_fold = log(rq_norm)) %>%
+  ungroup()
+
+#add sex category
+dat_gr_qpcr_final$sex[dat_gr_qpcr_final$treatment == "paired male"] <- "male"
+dat_gr_qpcr_final$sex[dat_gr_qpcr_final$treatment == "single male"] <- "male"
+dat_gr_qpcr_final$sex[dat_gr_qpcr_final$treatment == "paired female"] <- "female"
+dat_gr_qpcr_final$sex[dat_gr_qpcr_final$treatment == "single female"] <- "female"
+
+# add nest type category
+dat_gr_qpcr_final$type[dat_gr_qpcr_final$treatment == "paired male"] <- "paired parent"
+dat_gr_qpcr_final$type[dat_gr_qpcr_final$treatment == "single male"] <- "single parent"
+dat_gr_qpcr_final$type[dat_gr_qpcr_final$treatment == "paired female"] <- "paired parent"
+dat_gr_qpcr_final$type[dat_gr_qpcr_final$treatment == "single female"] <- "single parent"
+
+#just need one set
+dat_mr <- subset(dat_dct, gene == "mr")
+
+# subtract one paired dct control from all the treatment groups
+dat_ddct <-
+  dat_mr %>% 
+  mutate(ddct = dct - 4.385898) # using paired female 449
+
+# get fold change (rq)
+dat_qpcr <- 
+  dat_ddct %>%
+  group_by(sample, gene) %>%
+  mutate(rq = 2^-(ddct)) %>%
+  ungroup()
+
+#get dataframe of controls 
+control_genes <- 
+  dat_qpcr %>%
+  group_by(gene) %>%
+  summarise(control_rq = mean(rq[treatment == control_group], na.rm = T)) # control = average rq for vehicle group
+
+#join with control data by genes
+dat_ddct_controls <- left_join(dat_qpcr, control_genes) #joins by gene
+
+# FINAL PRODUCT: normalize rq, get log(rq_norm)
+dat_mr_qpcr_final <- 
+  dat_ddct_controls %>%
+  group_by(sample, gene) %>%
+  mutate(rq_norm = rq/control_rq,
+         log_fold = log(rq_norm)) %>%
+  ungroup()
+
+#add sex category
+dat_mr_qpcr_final$sex[dat_mr_qpcr_final$treatment == "paired male"] <- "male"
+dat_mr_qpcr_final$sex[dat_mr_qpcr_final$treatment == "single male"] <- "male"
+dat_mr_qpcr_final$sex[dat_mr_qpcr_final$treatment == "paired female"] <- "female"
+dat_mr_qpcr_final$sex[dat_mr_qpcr_final$treatment == "single female"] <- "female"
+
+# add nest type category
+dat_mr_qpcr_final$type[dat_mr_qpcr_final$treatment == "paired male"] <- "paired parent"
+dat_mr_qpcr_final$type[dat_mr_qpcr_final$treatment == "single male"] <- "single parent"
+dat_mr_qpcr_final$type[dat_mr_qpcr_final$treatment == "paired female"] <- "paired parent"
+dat_mr_qpcr_final$type[dat_mr_qpcr_final$treatment == "single female"] <- "single parent"
+
+#just need one set
+dat_prl <- subset(dat_dct, gene == "prl")
+
+# subtract one paired dct control from all the treatment groups
+dat_ddct <-
+  dat_prl %>% 
+  mutate(ddct = dct - (-10.719904)) # using paired female 449
+
+
+# get fold change (rq)
+dat_qpcr <- 
+  dat_ddct %>%
+  group_by(sample, gene) %>%
+  mutate(rq = 2^-(ddct)) %>%
+  ungroup()
+
+#get dataframe of controls 
+control_genes <- 
+  dat_qpcr %>%
+  group_by(gene) %>%
+  summarise(control_rq = mean(rq[treatment == control_group], na.rm = T)) # control = average rq for vehicle group
+
+#join with control data by genes
+dat_ddct_controls <- left_join(dat_qpcr, control_genes) #joins by gene
+
+# FINAL PRODUCT: normalize rq, get log(rq_norm)
+dat_prl_qpcr_final <- 
+  dat_ddct_controls %>%
+  group_by(sample, gene) %>%
+  mutate(rq_norm = rq/control_rq,
+         log_fold = log(rq_norm)) %>%
+  ungroup()
+
+#add sex category
+dat_prl_qpcr_final$sex[dat_prl_qpcr_final$treatment == "paired male"] <- "male"
+dat_prl_qpcr_final$sex[dat_prl_qpcr_final$treatment == "single male"] <- "male"
+dat_prl_qpcr_final$sex[dat_prl_qpcr_final$treatment == "paired female"] <- "female"
+dat_prl_qpcr_final$sex[dat_prl_qpcr_final$treatment == "single female"] <- "female"
+
+# add nest type category
+dat_prl_qpcr_final$type[dat_prl_qpcr_final$treatment == "paired male"] <- "paired parent"
+dat_prl_qpcr_final$type[dat_prl_qpcr_final$treatment == "single male"] <- "single parent"
+dat_prl_qpcr_final$type[dat_prl_qpcr_final$treatment == "paired female"] <- "paired parent"
+dat_prl_qpcr_final$type[dat_prl_qpcr_final$treatment == "single female"] <- "single parent"
+
+#just need one set
+dat_prlr <- subset(dat_dct, gene == "prlr")
+
+# subtract one paired dct control from all the treatment groups
+dat_ddct <-
+  dat_prlr %>% 
+  mutate(ddct = dct - 5.788522) # using paired female 449
+
+# get fold change (rq)
+dat_qpcr <- 
+  dat_ddct %>%
+  group_by(sample, gene) %>%
+  mutate(rq = 2^-(ddct)) %>%
+  ungroup()
+
+#get dataframe of controls 
+control_genes <- 
+  dat_qpcr %>%
+  group_by(gene) %>%
+  summarise(control_rq = mean(rq[treatment == control_group], na.rm = T)) # control = average rq for vehicle group
+
+#join with control data by genes
+dat_ddct_controls <- left_join(dat_qpcr, control_genes) #joins by gene
+
+# FINAL PRODUCT: normalize rq, get log(rq_norm)
+dat_prlr_qpcr_final <- 
+  dat_ddct_controls %>%
+  group_by(sample, gene) %>%
+  mutate(rq_norm = rq/control_rq,
+         log_fold = log(rq_norm)) %>%
+  ungroup()
+
+#add sex category
+dat_prlr_qpcr_final$sex[dat_prlr_qpcr_final$treatment == "paired male"] <- "male"
+dat_prlr_qpcr_final$sex[dat_prlr_qpcr_final$treatment == "single male"] <- "male"
+dat_prlr_qpcr_final$sex[dat_prlr_qpcr_final$treatment == "paired female"] <- "female"
+dat_prlr_qpcr_final$sex[dat_prlr_qpcr_final$treatment == "single female"] <- "female"
+
+# add nest type category
+dat_prlr_qpcr_final$type[dat_prlr_qpcr_final$treatment == "paired male"] <- "paired parent"
+dat_prlr_qpcr_final$type[dat_prlr_qpcr_final$treatment == "single male"] <- "single parent"
+dat_prlr_qpcr_final$type[dat_prlr_qpcr_final$treatment == "paired female"] <- "paired parent"
+dat_prlr_qpcr_final$type[dat_prlr_qpcr_final$treatment == "single female"] <- "single parent"
+
+#just need one set
+dat_oxtr <- subset(dat_dct, gene == "oxtr")
+
+# subtract one paired dct control from all the treatment groups
+dat_ddct <-
+  dat_oxtr %>% 
+  mutate(ddct = dct - 12.599834) # using paired female 449
+
+# get fold change (rq)
+dat_qpcr <- 
+  dat_ddct %>%
+  group_by(sample, gene) %>%
+  mutate(rq = 2^-(ddct)) %>%
+  ungroup()
+
+#get dataframe of controls 
+control_genes <- 
+  dat_qpcr %>%
+  group_by(gene) %>%
+  summarise(control_rq = mean(rq[treatment == control_group], na.rm = T)) # control = average rq for vehicle group
+
+#join with control data by genes
+dat_ddct_controls <- left_join(dat_qpcr, control_genes) #joins by gene
+
+# FINAL PRODUCT: normalize rq, get log(rq_norm)
+dat_oxtr_qpcr_final <- 
+  dat_ddct_controls %>%
+  group_by(sample, gene) %>%
+  mutate(rq_norm = rq/control_rq,
+         log_fold = log(rq_norm)) %>%
+  ungroup()
+
+#add sex category
+dat_oxtr_qpcr_final$sex[dat_oxtr_qpcr_final$treatment == "paired male"] <- "male"
+dat_oxtr_qpcr_final$sex[dat_oxtr_qpcr_final$treatment == "single male"] <- "male"
+dat_oxtr_qpcr_final$sex[dat_oxtr_qpcr_final$treatment == "paired female"] <- "female"
+dat_oxtr_qpcr_final$sex[dat_oxtr_qpcr_final$treatment == "single female"] <- "female"
+
+# add nest type category
+dat_oxtr_qpcr_final$type[dat_oxtr_qpcr_final$treatment == "paired male"] <- "paired parent"
+dat_oxtr_qpcr_final$type[dat_oxtr_qpcr_final$treatment == "single male"] <- "single parent"
+dat_oxtr_qpcr_final$type[dat_oxtr_qpcr_final$treatment == "paired female"] <- "paired parent"
+dat_oxtr_qpcr_final$type[dat_oxtr_qpcr_final$treatment == "single female"] <- "single parent"
+
+#just need one set
+dat_vipr <- subset(dat_dct, gene == "vipr")
+
+# subtract one paired dct control from all the treatment groups
+dat_ddct <-
+  dat_vipr %>% 
+  mutate(ddct = dct - 4.997425) # using paired female 449
+
+# get fold change (rq)
+dat_qpcr <- 
+  dat_ddct %>%
+  group_by(sample, gene) %>%
+  mutate(rq = 2^-(ddct)) %>%
+  ungroup()
+
+#get dataframe of controls 
+control_genes <- 
+  dat_qpcr %>%
+  group_by(gene) %>%
+  summarise(control_rq = mean(rq[treatment == control_group], na.rm = T)) # control = average rq for vehicle group
+
+#join with control data by genes
+dat_ddct_controls <- left_join(dat_qpcr, control_genes) #joins by gene
+
+# FINAL PRODUCT: normalize rq, get log(rq_norm)
+dat_vipr_qpcr_final <- 
+  dat_ddct_controls %>%
+  group_by(sample, gene) %>%
+  mutate(rq_norm = rq/control_rq,
+         log_fold = log(rq_norm)) %>%
+  ungroup()
+
+#add sex category
+dat_vipr_qpcr_final$sex[dat_vipr_qpcr_final$treatment == "paired male"] <- "male"
+dat_vipr_qpcr_final$sex[dat_vipr_qpcr_final$treatment == "single male"] <- "male"
+dat_vipr_qpcr_final$sex[dat_vipr_qpcr_final$treatment == "paired female"] <- "female"
+dat_vipr_qpcr_final$sex[dat_vipr_qpcr_final$treatment == "single female"] <- "female"
+
+# add nest type category
+dat_vipr_qpcr_final$type[dat_vipr_qpcr_final$treatment == "paired male"] <- "paired parent"
+dat_vipr_qpcr_final$type[dat_vipr_qpcr_final$treatment == "single male"] <- "single parent"
+dat_vipr_qpcr_final$type[dat_vipr_qpcr_final$treatment == "paired female"] <- "paired parent"
+dat_vipr_qpcr_final$type[dat_vipr_qpcr_final$treatment == "single female"] <- "single parent"
+```
+
+### Data Analysis
+### Confirm Rq for ref sample is 1
+```{r}
+#just need one set
+dat_gr_449 <- subset(dat_gr_qpcr_final, sample == "449")
+dat_mr_449 <- subset(dat_mr_qpcr_final, sample == "449")
+dat_prlr_449 <- subset(dat_prlr_qpcr_final, sample == "449")
+dat_prl_449 <- subset(dat_prl_qpcr_final, sample == "449")
+dat_oxtr_449 <- subset(dat_oxtr_qpcr_final, sample == "449")
+dat_vipr_449 <- subset(dat_vipr_qpcr_final, sample == "449")
+```
+# rq values 1 or close to 1! 
+
+#confirm reference genes 
+```{r}
+#just need one set
+dat_ref <- subset(dat_dct, gene == "rpl4")
+#add sex category
+dat_ref$sex[dat_ref$treatment == "paired male"] <- "male"
+dat_ref$sex[dat_ref$treatment == "single male"] <- "male"
+dat_ref$sex[dat_ref$treatment == "paired female"] <- "female"
+dat_ref$sex[dat_ref$treatment == "single female"] <- "female"
+
+# add nest type category
+dat_ref$type[dat_ref$treatment == "paired male"] <- "paired"
+dat_ref$type[dat_ref$treatment == "single male"] <- "single"
+dat_ref$type[dat_ref$treatment == "paired female"] <- "paired"
+dat_ref$type[dat_ref$treatment == "single female"] <- "single"
+```
+# incorporating key info again 
+```{r}
+dat_ref <- left_join(dat_ref, key, by = c("sample","treatment"))
+```
+
+```{r}
+ggplot(aes(y = ref_gene ,x = treatment, fill= treatment), data = dat_ref) + geom_boxplot() +
+  labs(title = "Refgene Expression", x="", y="ref gene Cq") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none")
+```
+
+```{r}
+leveneTest(ref_gene ~ treatment, data = dat_ref, center = mean)
+```
+```{r}
+leveneTest(ref_gene ~ brood, data = dat_ref, center = mean)
+```
+# so rank-transform test better
+```{r}
+lmer_ref <- lmer(rank(ref_gene) ~ treatment+brood+(1 | nestid), data = dat_ref, REML = TRUE)
+Anova(lmer_ref, type = "II", test = "F")
+```
+#so no significant difference between treatment groups in regards to reference genes. 
+```{r}
+eta_squared(Anova(lmer_ref, type = "II", test = "F"))
+```
+# by nest type and sex?
+```{r}
+leveneTest(ref_gene ~ type, data = dat_ref, center = mean)
+```
+```{r}
+leveneTest(ref_gene ~ sex, data = dat_ref, center = mean)
+```
+# so rank-transform test better (for sex)
+```{r}
+fit_ref_s <- aov(rank(ref_gene) ~ type*sex, data = dat_ref)
+Anova(fit_ref_s, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_ref_s, type = "II"))
+```
+# so no significant difference by treatment, nest-type, or sex! :)
+
+### PRLR 
+```{r}
+dat_prlr_qpcr_final <- left_join(dat_prlr_qpcr_final, key, by = c("sample","treatment"))
+```
+
+```{r}
+dat_prlr_qpcr_final$treatment[dat_prlr_qpcr_final$treatment == "paired male"] <- "paired father"
+dat_prlr_qpcr_final$treatment[dat_prlr_qpcr_final$treatment == "single male"] <- "single father"
+dat_prlr_qpcr_final$treatment[dat_prlr_qpcr_final$treatment == "paired female"] <- "paired mother"
+dat_prlr_qpcr_final$treatment[dat_prlr_qpcr_final$treatment == "single female"] <- "single mother"
+```
+
+```{r}
+my_t_prlr <- expression(bold("Pituitary" ~ paste(bolditalic("PRLR"))))
+prlr <- ggplot(aes(y = rq_norm,x = treatment, fill= treatment), data = dat_prlr_qpcr_final) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent) +
+  labs(title = my_t_prlr,subtitle = "", x="", y="fold change to paired mothers") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 14)) + theme(legend.position = "none") +
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5)) + ggsignif::geom_signif(comparisons = list(c("paired mother", "paired father")), map_signif_level = TRUE, y_position = c(3.2), textsize = 9) + ggsignif::geom_signif(comparisons = list(c("single mother", "paired father")), map_signif_level = TRUE, y_position = c(3.2), textsize = 9)+ ggsignif::geom_signif(comparisons = list(c("paired father", "single father")), map_signif_level = TRUE, y_position = c(3.8), textsize = 9) + scale_x_discrete(limits=c("paired mother", "paired father", "single mother", "single father"))+ ylim(0,4.5)
+prlr
+```
+# will remove paired mother (1) and single father (2) outliers
+```{r}
+#remove outliers
+dat_prlr_qpcr_final <- dat_prlr_qpcr_final[-c(7,50,49), ]
+```
+
+```{r}
+leveneTest(rq_norm ~ treatment, data = dat_prlr_qpcr_final, center = mean)
+```
+```{r}
+leveneTest(rq_norm ~ brood, data = dat_prlr_qpcr_final, center = mean)
+```
+# so rank transform better 
+```{r}
+lmer_prlr <- lmer(rank(rq_norm) ~ treatment+brood+(1 | nestid), data = dat_prlr_qpcr_final, REML = TRUE)
+Anova(lmer_prlr, type = "II", test = "F")
+```
+```{r}
+eta_squared(Anova(lmer_prlr, type = "II", test = "F"))
+```
+# so significant difference between treatment groups.
+# post-hoc analysis:
+```{r}
+emmeans::emmeans(lmer_prlr, list(pairwise ~ treatment), adjust="tukey") 
+```
+
+## Cohen's d analysis
+#subsets of treatment groups
+```{r}
+pmom <- dat_prlr_qpcr_final[dat_prlr_qpcr_final$treatment == "paired mother",] #12
+pfath <- dat_prlr_qpcr_final[dat_prlr_qpcr_final$treatment == "paired father",] #15
+smom <- dat_prlr_qpcr_final[dat_prlr_qpcr_final$treatment == "single mother",] #13
+sfath <- dat_prlr_qpcr_final[dat_prlr_qpcr_final$treatment == "single father",] #8
+```
+# paired fathers vs paired mothers
+```{r}
+pfath_v_pmom <- full_join(pfath,pmom)
+cohens_d(rq_norm ~ treatment, data = pfath_v_pmom)
+```
+# paired fathers vs single mothers
+```{r}
+pfath_v_smom <- full_join(pfath,smom)
+cohens_d(rq_norm ~ treatment, data = pfath_v_smom)
+```
+# paired fathers vs single fathers
+```{r}
+pfath_v_sfath <- full_join(pfath,sfath)
+cohens_d(rq_norm ~ treatment, data = pfath_v_sfath)
+```
+# so a significant difference between paired fathers versus paired mothers and single mothers, but not single fathers when include brood size. What if brood size is removed as a co-variable?
+# with brood size removed
+```{r}
+lmer_prlr_nob <- lmer(rank(rq_norm) ~ treatment+(1 | nestid), data = dat_prlr_qpcr_final, REML = TRUE)
+Anova(lmer_prlr_nob, type = "II", test = "F")
+```
+
+```{r}
+eta_squared(Anova(lmer_prlr_nob, type = "II", test = "F"))
+```
+# so significant difference between treatment groups.
+# post-hoc analysis:
+```{r}
+emmeans::emmeans(lmer_prlr_nob, list(pairwise ~ treatment), adjust="tukey") 
+```
+# so also a significant difference between paired fathers and single fathers if remove brood size as co-variable (and there is no significant difference in terms of brood size for PRLR, anyways.).
+# nest type and sex
+```{r}
+leveneTest(rq_norm ~ type, data = dat_prlr_qpcr_final, center = mean)
+```
+```{r}
+leveneTest(rq_norm ~ sex, data = dat_prlr_qpcr_final, center = mean)
+```
+# so rank transform better 
+```{r}
+fit_prlr_s <- aov(rank(rq_norm) ~ type*sex, data = dat_prlr_qpcr_final)
+Anova(fit_prlr_s, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_prlr_s, type = "II"))
+```
+# so also significant difference by nest-type and sex.
+
+### PRL
+```{r}
+dat_prl_qpcr_final <- left_join(dat_prl_qpcr_final, key, by = c("sample","treatment"))
+```
+
+```{r}
+dat_prl_qpcr_final$treatment[dat_prl_qpcr_final$treatment == "paired male"] <- "paired father"
+dat_prl_qpcr_final$treatment[dat_prl_qpcr_final$treatment == "single male"] <- "single father"
+dat_prl_qpcr_final$treatment[dat_prl_qpcr_final$treatment == "paired female"] <- "paired mother"
+dat_prl_qpcr_final$treatment[dat_prl_qpcr_final$treatment == "single female"] <- "single mother"
+```
+
+```{r}
+my_t_prl <- expression(bold("Pituitary" ~ paste(bolditalic("PRL"), ~ "by treatment group")))
+prl <- ggplot(aes(y = rq_norm,x = treatment, fill= treatment), data = dat_prl_qpcr_final) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent) +
+  labs(title = my_t_prl,subtitle = "", x="", y="fold change to paired mothers") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 14)) + theme(legend.position = "none") +
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5)) + scale_x_discrete(limits=c("paired mother", "paired father", "single mother", "single father")) +  ggsignif::geom_signif(comparisons = list(c("single mother", "paired mother")), map_signif_level = TRUE, y_position = c(1.65), textsize = 9) + ylim(0,2)
+prl
+```
+```{r}
+my_t_prl <- expression(bold("Pituitary" ~ paste(bolditalic("PRL"), ~ "by nest-type")))
+prl_s <- ggplot(aes(y = rq_norm,x = type, fill= type), data = dat_prl_qpcr_final) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent_pool) +
+  labs(title = my_t_prl,subtitle = "", x="", y="fold change to paired mothers") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 14)) + theme(legend.position = "none") +
+  theme(axis.text.x = element_text(angle = 1, vjust = 0.5, hjust=0.5)) + ggsignif::geom_signif(comparisons = list(c("single parent", "paired parent")), map_signif_level = TRUE, textsize = 9) + ylim(0,2)
+prl_s
+```
+# will remove single female (1) outlier
+```{r}
+dat_prl_qpcr_final <- dat_prl_qpcr_final[-c(35), ]
+```
+
+```{r}
+leveneTest(rq_norm ~ treatment, data = dat_prl_qpcr_final, center = mean)
+```
+```{r}
+leveneTest(rq_norm ~ brood, data = dat_prl_qpcr_final, center = mean)
+```
+# so parametric tests ok
+```{r}
+lmer_prl <- lmer(rq_norm ~ treatment+brood+(1 | nestid), data = dat_prl_qpcr_final, REML = TRUE)
+Anova(lmer_prl, type = "II", test = "F")
+```
+```{r}
+eta_squared(Anova(lmer_prl, type = "II", test = "F"))
+```
+#so no significant difference by treatment groups when brood size included. 
+
+# what if drop brood size?
+```{r}
+lmer_prl_nob <- lmer(rq_norm ~ treatment+(1 | nestid), data = dat_prl_qpcr_final, REML = TRUE)
+Anova(lmer_prl_nob, type = "II", test = "F")
+```
+
+```{r}
+emmeans::emmeans(lmer_prl_nob, list(pairwise ~ treatment), adjust="tukey") 
+```
+# now a significant difference between paired mothers and single mothers. 
+
+## Cohen's d analysis
+#subsets of treatment groups
+```{r}
+pmom <- dat_prl_qpcr_final[dat_prl_qpcr_final$treatment == "paired mother",] #13
+pfath <- dat_prl_qpcr_final[dat_prl_qpcr_final$treatment == "paired father",] #15
+smom <- dat_prl_qpcr_final[dat_prl_qpcr_final$treatment == "single mother",] #12
+sfath <- dat_prl_qpcr_final[dat_prl_qpcr_final$treatment == "single father",] #10
+```
+#paired mothers vs single mothers
+```{r}
+pmom_v_smom <- full_join(pmom,smom)
+cohens_d(rq_norm ~ treatment, data = pmom_v_smom)
+```
+# nest type and sex
+```{r}
+leveneTest(rq_norm ~ type, data = dat_prl_qpcr_final, center = mean)
+```
+```{r}
+leveneTest(rq_norm ~ sex, data = dat_prl_qpcr_final, center = mean)
+```
+# so parametric tests ok
+```{r}
+fit_prl_s <- aov(rq_norm ~ type*sex, data = dat_prl_qpcr_final)
+Anova(fit_prl_s, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_prl_s, type = "II"))
+```
+# so significant difference by nest-type in general, with single parents expressing less PRL in the pituitary than paired parents overall. 
+
+###VIPR
+```{r}
+dat_vipr_qpcr_final <- left_join(dat_vipr_qpcr_final, key, by = c("sample","treatment"))
+```
+
+```{r}
+dat_vipr_qpcr_final$treatment[dat_vipr_qpcr_final$treatment == "paired male"] <- "paired father"
+dat_vipr_qpcr_final$treatment[dat_vipr_qpcr_final$treatment == "single male"] <- "single father"
+dat_vipr_qpcr_final$treatment[dat_vipr_qpcr_final$treatment == "paired female"] <- "paired mother"
+dat_vipr_qpcr_final$treatment[dat_vipr_qpcr_final$treatment == "single female"] <- "single mother"
+```
+
+```{r}
+my_y_vipr <- expression(paste(italic("VIPR"), ~ "fold change to paired mothers"))
+vipr <- ggplot(aes(y = rq_norm,x = treatment, fill= treatment), data = dat_vipr_qpcr_final) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent) +
+  labs(title = "", x="", y=my_y_vipr) + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=18)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 16)) + theme(legend.position = "none") +
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust= 0.5)) + scale_x_discrete(limits=c("paired mother", "paired father", "single mother", "single father"))
+vipr
+```
+# will remove paired female (2), paired male (1) and single female (2) outliers
+```{r}
+dat_vipr_qpcr_final <- dat_vipr_qpcr_final[-c(1,14,18,31,33), ]
+```
+```{r}
+leveneTest(rq_norm ~ treatment, data = dat_vipr_qpcr_final, center = mean)
+```
+```{r}
+leveneTest(rq_norm ~ brood, data = dat_vipr_qpcr_final, center = mean)
+```
+# so parametric test okay.
+```{r}
+lmer_vipr <- lmer(rq_norm ~ treatment+brood+(1 | nestid), data = dat_vipr_qpcr_final, REML = TRUE)
+Anova(lmer_vipr, type = "II", test = "F")
+```
+```{r}
+eta_squared(Anova(lmer_vipr, type = "II", test = "F"))
+```
+
+# nest type and sex
+```{r}
+leveneTest(rq_norm ~ type, data = dat_vipr_qpcr_final, center = mean)
+```
+```{r}
+leveneTest(rq_norm ~ sex, data = dat_vipr_qpcr_final, center = mean)
+```
+# so parametric test okay.
+```{r}
+fit_vipr_s <- aov(rq_norm ~ type*sex, data = dat_vipr_qpcr_final)
+Anova(fit_vipr_s, type = "II")
+```
+# no significant difference
+```{r}
+eta_squared(Anova(fit_vipr_s, type = "II"))
+```
+
+### OXTR
+```{r}
+dat_oxtr_qpcr_final <- left_join(dat_oxtr_qpcr_final, key, by = c("sample","treatment"))
+```
+
+```{r}
+dat_oxtr_qpcr_final$treatment[dat_oxtr_qpcr_final$treatment == "paired male"] <- "paired father"
+dat_oxtr_qpcr_final$treatment[dat_oxtr_qpcr_final$treatment == "single male"] <- "single father"
+dat_oxtr_qpcr_final$treatment[dat_oxtr_qpcr_final$treatment == "paired female"] <- "paired mother"
+dat_oxtr_qpcr_final$treatment[dat_oxtr_qpcr_final$treatment == "single female"] <- "single mother"
+```
+
+```{r}
+my_y_oxtr <- expression(paste(italic("Oxt-R"), ~ "fold change to paired mothers"))
+oxtr <- ggplot(aes(y = rq_norm,x = treatment, fill= treatment), data = dat_oxtr_qpcr_final) + geom_boxplot(outlier.shape = NA) + geom_boxplot() + scale_fill_manual(values = colors_parent) +
+  labs(title = "", x="", y=my_y_oxtr) + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=18)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 16)) + theme(legend.position = "none") +
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5)) + scale_x_discrete(limits=c("paired mother", "paired father", "single mother", "single father"))
+oxtr
+```
+```{r}
+leveneTest(rq_norm ~ treatment, data = dat_oxtr_qpcr_final, center = mean)
+```
+```{r}
+leveneTest(rq_norm ~ brood, data = dat_oxtr_qpcr_final, center = mean)
+```
+# so rank transform better
+```{r}
+lmer_oxtr <- lmer(rank(rq_norm) ~ treatment+brood+(1 | nestid), data = dat_oxtr_qpcr_final, REML = TRUE)
+Anova(lmer_oxtr, type = "II", test = "F")
+```
+```{r}
+eta_squared(Anova(lmer_oxtr, type = "II", test = "F"))
+```
+# no significant difference
+ 
+# nest type and sex
+```{r}
+leveneTest(rq_norm ~ type, data = dat_oxtr_qpcr_final, center = mean)
+```
+```{r}
+leveneTest(rq_norm ~ sex, data = dat_oxtr_qpcr_final, center = mean)
+```
+# rank transform test better
+```{r}
+fit_oxtr_s <- aov(rank(rq_norm) ~ type*sex, data = dat_oxtr_qpcr_final)
+Anova(fit_oxtr_s, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_oxtr_s, type = "II"))
+```
+
+### GR
+```{r} 
+dat_gr_qpcr_final <- left_join(dat_gr_qpcr_final, key, by = c("sample","treatment"))
+```
+```{r}
+dat_gr_qpcr_final$treatment[dat_gr_qpcr_final$treatment == "paired male"] <- "paired father"
+dat_gr_qpcr_final$treatment[dat_gr_qpcr_final$treatment == "single male"] <- "single father"
+dat_gr_qpcr_final$treatment[dat_gr_qpcr_final$treatment == "paired female"] <- "paired mother"
+dat_gr_qpcr_final$treatment[dat_gr_qpcr_final$treatment == "single female"] <- "single mother"
+```
+
+```{r}
+my_y_gr <- expression(paste(italic("GR"), ~ "fold change to paired mothers"))
+gr <- ggplot(aes(y = rq_norm,x = treatment, fill= treatment), data = dat_gr_qpcr_final) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent) +
+  labs(title = "", x="", y=my_y_gr) + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=18)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 16)) + theme(legend.position = "none") + scale_x_discrete(limits=c("paired mother", "paired father", "single mother", "single father"))
+gr
+```
+# will remove paired female (1) and paired father (1) outliers
+```{r}
+#remove outliers
+dat_gr_qpcr_final <- dat_gr_qpcr_final[-c(7,28), ]
+```
+
+```{r}
+leveneTest(rq_norm ~ treatment, data = dat_gr_qpcr_final, center = mean)
+```
+```{r}
+leveneTest(rq_norm ~ brood, data = dat_gr_qpcr_final, center = mean)
+```
+# so should rank transform 
+```{r}
+lmer_gr <- lmer(rank(rq_norm) ~ treatment+brood+(1 | nestid), data = dat_gr_qpcr_final, REML = TRUE)
+Anova(lmer_gr, type = "II", test = "F")
+```
+```{r}
+eta_squared(Anova(lmer_gr, type = "II", test = "F"))
+```
+# no significant difference
+
+#nest type and sex
+```{r}
+leveneTest(rq_norm ~ type, data = dat_gr_qpcr_final, center = mean)
+```
+```{r}
+leveneTest(rq_norm ~ sex, data = dat_gr_qpcr_final, center = mean)
+```
+# so rank transform best
+```{r}
+fit_gr_s <- aov(rank(rq_norm) ~ type*sex, data = dat_gr_qpcr_final)
+Anova(fit_gr_s, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_gr_s, type = "II"))
+```
+
+### MR
+```{r}
+dat_mr_qpcr_final <- left_join(dat_mr_qpcr_final, key, by = c("sample","treatment"))
+```
+
+```{r}
+dat_mr_qpcr_final$treatment[dat_mr_qpcr_final$treatment == "paired male"] <- "paired father"
+dat_mr_qpcr_final$treatment[dat_mr_qpcr_final$treatment == "single male"] <- "single father"
+dat_mr_qpcr_final$treatment[dat_mr_qpcr_final$treatment == "paired female"] <- "paired mother"
+dat_mr_qpcr_final$treatment[dat_mr_qpcr_final$treatment == "single female"] <- "single mother"
+```
+
+```{r}
+my_y_mr <- expression(paste(italic("MR"), ~ "fold change to paired mothers"))
+mr <- ggplot(aes(y = rq_norm,x = treatment, fill= treatment), data = dat_mr_qpcr_final) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent) +
+  labs(title = "", x="", y=my_y_mr) + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=18)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 16)) + theme(legend.position = "none") + scale_x_discrete(limits=c("paired mother", "paired father", "single mother", "single father"))
+mr
+```
+# will remove paired male (2), and single male (1) outliers
+```{r}
+dat_mr_qpcr_final <- dat_mr_qpcr_final[-c(20,25,50), ]
+```
+```{r}
+leveneTest(rq_norm ~ treatment, data = dat_mr_qpcr_final, center = mean)
+```
+```{r}
+leveneTest(rq_norm ~ brood, data = dat_mr_qpcr_final, center = mean)
+```
+# so need to rank tranform
+```{r}
+lmer_mr <- lmer(rank(rq_norm) ~ treatment+brood+(1 | nestid), data = dat_mr_qpcr_final, REML = TRUE)
+Anova(lmer_mr, type = "II", test = "F")
+```
+```{r}
+eta_squared(Anova(lmer_mr, type = "II", test = "F"))
+```
+# no significant difference
+
+#nest type and sex
+```{r}
+leveneTest(rq_norm ~ type, data = dat_mr_qpcr_final, center = mean)
+```
+```{r}
+leveneTest(rq_norm ~ sex, data = dat_mr_qpcr_final, center = mean)
+```
+
+```{r}
+fit_mr_s <- aov(rq_norm ~ type*sex, data = dat_mr_qpcr_final)
+Anova(fit_mr_s, type = "II")
+```
+
+```{r}
+eta_squared(Anova(fit_mr_s, type = "II"))
+```
+# so no significant difference by nest-type or sex either. 
+
+###compiling figures
+```{r}
+plot_grid(prlr, prl,prl_s, labels = "AUTO", align = "hv")
+```
+

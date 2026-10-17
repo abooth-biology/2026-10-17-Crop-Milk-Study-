@@ -1,0 +1,69 @@
+﻿nestid,treatment,chick,day,weight_gm,tarsus_1,tarsus_2,tarsus
+1929,single female,a,3,44,11.2,NA,11.2
+1929,single female,b,3,47,12.4,12,12.2
+1904,single female,a,3,NA,NA,NA,NA
+1904,single female,b,3,55,13.7,NA,13.7
+1881,single female,a,3,40,11.7,NA,11.7
+1880,single female,a,3,34,13.3,NA,13.3
+1880,single female,b,3,35,13.8,NA,13.8
+2953,paired,a,3,44,10.5,10.6,10.55
+2953,paired,b,3,35,9.6,9.8,9.7
+2945,paired,a,3,54,15.9,16.2,16.05
+2945,paired,b,3,49,15.4,15,15.2
+2234,paired,a,3,43,12.4,12.3,12.35
+2234,paired,b,3,45,13.5,13.4,13.45
+2220,paired,a,3,NA,NA,NA,NA
+2220,paired,b,3,41,12.9,12.3,12.6
+1910,paired,a,3,34,10.1,NA,10.1
+1910,paired,b,3,28,10.5,NA,10.5
+1899,paired,a,3,38,11.8,NA,11.8
+1899,paired,b,3,57,14.8,NA,14.8
+3695,single male,a,3,35,14.7,15.3,15
+3695,single male,b,3,30,12.6,12.8,12.7
+3696,single female,a,3,49,14.4,14.3,14.35
+3696,single female,b,3,34,13.9,14.1,14
+3467,single female,a,3,37,14.2,14.2,14.2
+3467,single female,b,3,31,12.7,12.7,12.7
+3461,single female,a,3,54,13.4,13.4,13.4
+3461,single female,b,3,38,13.7,13.7,13.7
+3725,single male,a,3,29,13.9,13.9,13.9
+3725,single male,b,3,27,14,13.9,13.95
+3958,paired,a,3,42,14.3,14,14.15
+3972,single female,a,3,46,15.6,15.8,15.7
+3972,single female,b,3,41,14.8,15.1,14.95
+3989,single female,a,3,48,15.2,15.3,15.25
+3989,single female,b,3,44,14.9,15.1,15
+4141,single female,a,3,37,14,14.1,14.05
+4141,single female,b,3,30,14.2,14.4,14.3
+4138,single female,a,3,NA,NA,NA,NA
+4138,single female,b,3,33,13.7,13.5,13.6
+4139,paired,a,3,44,15.8,15.8,15.8
+4139,paired,b,3,50,15.8,15.7,15.75
+4157,paired,a,3,36,16,16,16
+4157,paired,b,3,65,16.5,16.5,16.5
+4194,single male,a,3,54,16.3,16.5,16.4
+4194,single male,b,3,39,14.4,14.2,14.3
+4167,single male,a,3,45,15.8,15.7,15.75
+4231,single male,a,3,32,13.2,13.2,13.2
+4231,single male,b,3,35,13.5,13.2,13.35
+4261,single male,a,3,28,12.5,12.4,12.45
+4261,single male,b,3,23,11.1,11.1,11.1
+4279,single male,a,3,49,13.3,13.5,13.4
+4279,single male,b,3,38,13.3,13.1,13.2
+4282,single male,a,3,31,13.8,13.6,13.7
+4281,single male,a,3,46,15.1,15.2,15.15
+4290,paired,a,3,36,15.3,15.2,15.25
+4290,paired,b,3,52,17.4,17.2,17.3
+3685,single male,a,3,42,14.1,13.9,14
+3685,single male,b,3,39,12.9,12.9,12.9
+3368,single male,a,3,37,14.8,14.8,14.8
+3368,single male,b,3,19,12.4,12.4,12.4
+3340,paired,a,3,57,15,15,15
+3340,paired,b,3,62,15.3,15.2,15.25
+3366,single female,a,3,49,13.6,13.6,13.6
+4344,single female,a,3,39,15.5,15.5,15.5
+4344,single female,b,3,38,14,13.9,13.95
+4343,single female,a,3,43,13.5,13.6,13.55
+4349,paired,a,3,48,15.6,15.7,15.65
+4351,paired,a,3,40,15.2,15.3,15.25
+4351,paired,b,3,59,17.2,17.3,17.25

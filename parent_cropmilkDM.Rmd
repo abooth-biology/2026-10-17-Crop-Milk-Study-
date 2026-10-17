@@ -1,0 +1,156 @@
+---
+title: "Adult crop milk dry weight"
+output: html_notebook
+---
+
+```{r, echo=FALSE}
+library(tidyverse)
+library(extrafont)
+library(cowplot)
+library(car)
+library(lme4)
+library(lmerTest)
+library(effectsize)
+```
+```{r}
+# function to define the B3 lab theme
+theme_B3 <- function () { 
+  theme_classic() +
+    theme(
+      panel.grid.major  = element_blank(),  # remove major gridlines
+      panel.grid.minor  = element_blank(),  # remove minor gridlines
+      plot.subtitle = element_text(hjust = 0.5, face = "bold"), # center & bold
+      plot.title = element_text(hjust = 0.5, face = "bold") # center & bold 
+    )
+}
+```
+```{r figure out working directory}
+getwd()
+```
+
+#1.Get general data together:
+```{r}
+data_dry <- read.csv("/Users/AprilBooth/Desktop/Dissertation/Chapter2_cropmilk/R_markdowns/parent_cropmilkDM.csv")
+```
+
+#2.import key with relevant treatment groups
+  #key MUST have the following columns: sample, treatment, brood
+```{r}
+key <- read.csv("/Users/AprilBooth/Desktop/Dissertation/keys/parent_key.csv")
+```
+
+#3. merge key and raw data and create nest type category, also change names a little
+```{r}
+data_dry <- left_join(data_dry, key, by = "sample")
+data_dry$sex[data_dry$treatment == "single male"] <- "male"
+data_dry$sex[data_dry$treatment == "single female"] <- "female"
+data_dry$sex[data_dry$treatment == "paired male"] <- "male"
+data_dry$sex[data_dry$treatment == "paired female"] <- "female"
+data_dry$type[data_dry$treatment == "single male"] <- "single parent"
+data_dry$type[data_dry$treatment == "single female"] <- "single parent"
+data_dry$type[data_dry$treatment == "paired female"] <- "paired parent"
+data_dry$type[data_dry$treatment == "paired male"] <- "paired parent"
+data_dry$treatment[data_dry$treatment == "paired female"] <- "paired mother"
+data_dry$treatment[data_dry$treatment == "paired male"] <- "paired father"
+data_dry$treatment[data_dry$treatment == "single male"] <- "single father"
+data_dry$treatment[data_dry$treatment == "single female"] <- "single mother"
+```
+# removing abandoned nest
+```{r}
+data_dry_rm <- data_dry[-c(4), ]
+```
+# counting actual samples measured
+```{r}
+data_dry_rm %>% count(treatment)
+```
+#4. calculate % dry matter and obtain CV replicate mean
+```{r}
+data_dry_rm$percent <- data_dry_rm$avg_dry_m*100
+```
+
+```{r determine mean}
+CV_mean <- data_dry_rm %>% 
+  summarise(mean = mean(cv_replicate, na.rm = TRUE))
+CV_mean
+```
+
+#5. visualize data and analyze
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+dryw <- ggplot(aes(y = percent, x = treatment, fill = treatment), data = data_dry_rm) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent) + scale_x_discrete(limits=c("paired mother","paired father", "single mother", "single father")) + labs(title = "percent crop milk DM retained by parents", x="", y="% dry matter") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="", size=16)) +theme(axis.text = element_text(face = "bold", color = "black",family="", size = 16)) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list(c("single father", "paired mother")), map_signif_level = TRUE, textsize = 9) + ggsignif::geom_signif(comparisons = list(c("paired father", "paired mother")), map_signif_level = TRUE, y_position = c(40), textsize = 9) + ggsignif::geom_signif(comparisons = list(c("single father", "single mother")), map_signif_level = TRUE, y_position = c(40), textsize = 9) + ggsignif::geom_signif(comparisons = list(c("single mother", "paired father")), map_signif_level = TRUE, y_position = c(50), textsize = 9) + ylim(0,65)
+dryw
+```
+
+```{r}
+leveneTest(percent ~ treatment, data = data_dry_rm, center=mean)
+```
+```{r}
+leveneTest(percent ~ brood, data = data_dry_rm, center=mean)
+```
+# so parametric test ok
+```{r}
+lmer_dry <- lmer(percent ~ treatment+brood+(1 | nestid), data = data_dry_rm, REML = TRUE)
+Anova(lmer_dry, type = "II", test = "F")
+```
+```{r}
+eta_squared(Anova(lmer_dry, type = "II", test = "F"))
+```
+# so significant difference by treatment groups
+```{r}
+emmeans::emmeans(lmer_dry, list(pairwise ~ treatment), adjust="tukey") 
+```
+# so significant difference between paired mothers and paired fathers, single mothers and paired fathers, single fathers and paired mothers, and single mothers and single fathers.  
+
+## effect size look
+#subsets of treatment groups
+```{r}
+pmom <- data_dry_rm[data_dry_rm$treatment == "paired mother",]
+pfath <- data_dry_rm[data_dry_rm$treatment == "paired father",]
+smom <- data_dry_rm[data_dry_rm$treatment == "single mother",]
+sfath <- data_dry_rm[data_dry_rm$treatment == "single father",]
+```
+
+# paired fathers v paired mothers
+```{r}
+pfath_v_pmom <- full_join(pfath,pmom)
+cohens_d(percent ~ treatment, data = pfath_v_pmom)
+```
+
+# paired fathers v single mothers
+```{r}
+pfath_v_smom <- full_join(pfath,smom)
+cohens_d(percent ~ treatment, data = pfath_v_smom)
+```
+
+#single mothers v single fathers
+```{r}
+sfath_v_smom <- full_join(sfath,smom)
+cohens_d(percent ~ treatment, data = sfath_v_smom)
+```
+
+#single fathers versus paired mothers
+```{r}
+sfath_v_pmom <- full_join(sfath,pmom)
+cohens_d(percent ~ treatment, data = sfath_v_pmom)
+```
+
+# by nest type and sex
+```{r}
+leveneTest(percent ~ type, data = data_dry_rm, center=mean)
+```
+```{r}
+leveneTest(percent ~ sex, data = data_dry_rm, center=mean)
+```
+# so parametric test ok
+```{r}
+fit_dry <- aov(percent ~ type*sex, data = data_dry_rm)
+Anova(fit_dry, type = "II")
+```
+# so significant difference by sex in general. 
+```{r}
+eta_squared(Anova(fit_dry, type = "II"))
+```
+### compile figures
+```{r}
+plot_grid(crop_weight, dryw, labels = "AUTO",nrow = 1, align = "h") #crop_weight figure created with parent_cropmilkquality.Rmd) 
+```
+

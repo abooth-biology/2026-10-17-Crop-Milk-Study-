@@ -1,0 +1,218 @@
+---
+title: "Chick crop milk dry weight"
+output: html_notebook
+---
+
+```{r, echo=FALSE}
+library(tidyverse)
+library(extrafont)
+library(cowplot)
+library(car)
+library(lme4)
+library(effectsize)
+```
+```{r}
+# function to define the B3 lab theme
+theme_B3 <- function () { 
+  theme_classic() +
+    theme(
+      panel.grid.major  = element_blank(),  # remove major gridlines
+      panel.grid.minor  = element_blank(),  # remove minor gridlines
+      plot.subtitle = element_text(hjust = 0.5, face = "bold"), # center & bold
+      plot.title = element_text(hjust = 0.5, face = "bold") # center & bold 
+    )
+}
+```
+```{r figure out working directory}
+getwd()
+```
+
+#1.Get general data together:
+```{r}
+data_dry <- read.csv("/Users/AprilBooth/Desktop/Dissertation/Chapter2_cropmilk/R_markdowns/chick_cropmilkDM.csv")
+data_dry$nestid <- data_dry$nest_id
+data_dry <- select(data_dry, "nestid", "chick", "avg_dry_matter","stddev", "cv_rep")
+```
+
+#2.import key with relevant treatment groups
+  #key MUST have the following columns: sample, treatment 
+```{r}
+key <- read.csv("/Users/AprilBooth/Desktop/Dissertation/keys/chick_key.csv")
+```
+
+#3. merge key and raw data and create nest type category, also change names a little + determine CV% replicate average
+```{r}
+data_dry <- left_join(data_dry, key, by = "nestid")
+data_dry$type[data_dry$treatment == "paired parents"] <- "paired parents"
+data_dry$type[data_dry$treatment == "single male"] <- "single parent"
+data_dry$type[data_dry$treatment == "single female"] <- "single parent"
+data_dry$treatment[data_dry$treatment == "paired parents"] <- "paired parents"
+data_dry$treatment[data_dry$treatment == "single male"] <- "single father"
+data_dry$treatment[data_dry$treatment == "single female"] <- "single mother"
+data_dry <- select(data_dry, -"treatment_day", -"crop.milk.data.")
+```
+
+```{r determine mean}
+cv_mean <- data_dry %>% 
+  summarise(mean = mean(cv_rep, na.rm = TRUE))
+cv_mean
+```   
+```{r determine standard deviation}
+cv_stdv <- data_dry %>% 
+  summarise(stdv = sd(cv_rep, na.rm = TRUE))
+cv_stdv
+```
+
+#4. calculate % dry matter and obtain average from two chick nests
+```{r}
+data_dry$percent <- data_dry$avg_dry_matter*100
+```
+```{r get average for two chick nests}
+one <- data_dry[data_dry$brood == "one",]
+two <- data_dry[data_dry$brood == "two",]
+twoa <- two[two$chick == "a",]
+twob <- two[two$chick == "b",]
+two <- full_join(twoa, twob, by = "nestid")
+two$percent <- (two$percent.x + two$percent.y)/2
+two$brood <- two$brood.x
+two$treatment <- two$treatment.x
+two$type <- two$type.x
+two <- select(two, "nestid", "brood", "percent", "treatment", "type")
+```
+```{r one and two data sets}
+data_dry <- full_join(one, two)
+data_dry <- select(data_dry,  "nestid", "brood", "percent", "treatment", "type")
+```
+# counting two-chick and one-chick broods
+```{r}
+twoa %>% count(treatment)
+```
+```{r}
+one %>% count(treatment)
+```
+#5. visualize data and analyze
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+dryw <- ggplot(aes(y = percent, x = treatment, fill = treatment), data = data_dry) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_chick) + scale_x_discrete(limits=c("paired parents", "single mother", "single father")) + labs(title = "Percent crop milk dry matter ingested by chicks",subtitle = "by treatment group", x="", y="% Dry Matter") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=12)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list(c("single father", "paired parents")), map_signif_level = TRUE, textsize = 9) + ylim(0,35) + theme(plot.title = element_text(size = 12))
+dryw
+```
+
+```{r}
+leveneTest(percent ~ treatment, data = data_dry, center="mean")
+```
+```{r}
+leveneTest(percent ~ brood, data = data_dry, center="mean")
+```
+# so rank-transform better
+```{r}
+fit_cd <- aov(rank(percent) ~ treatment+brood , data = data_dry)
+Anova(fit_cd, type = "II")
+```
+
+```{r}
+eta_squared(Anova(fit_cd, type = "II"))
+```
+
+```{r}
+TukeyHSD(fit_cd)
+```
+# so siginificant difference between single fathered and paired parented chicks
+# obtain effect size
+```{r}
+paired <- data_dry[data_dry$treatment == "paired parents",]
+smom <- data_dry[data_dry$treatment == "single mother",]
+sfath <- data_dry[data_dry$treatment == "single father",]
+```
+
+```{r}
+paired_v_sfath <- full_join(paired, sfath)
+cohens_d(percent ~ treatment, data = paired_v_sfath)
+```
+
+#How about by nest type? 
+```{r}
+leveneTest(percent ~ type, data = data_dry, center="mean")
+```
+# so rank-transform better
+
+```{r}
+fit_cds <- aov(rank(percent) ~ type+brood , data = data_dry)
+Anova(fit_cds, type = "II")
+```
+
+```{r}
+eta_squared(Anova(fit_cds, type = "II"))
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+dryw_p <- ggplot(aes(y = percent, x = type, fill = type), data = data_dry) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_chick_pool) + scale_x_discrete(limits=c("paired parents", "single parent")) + labs(title ="Percent crop milk dry matter ingested by chicks",subtitle = "by nest-type", x="", y="% Dry Matter") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=12)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list(c("single parent", "paired parents")), map_signif_level = TRUE, textsize = 9) + ylim(0,35) +  theme(plot.title = element_text(size = 12))
+dryw_p
+```
+
+# so when single parented chicks pooled together, there is a significant difference in dry matter-- with single parented chicks receiving less dry matter than paired parented chicks. 
+
+### asynchronous nests
+## first hatched chicks
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+asynch_a <- ggplot(aes(y = percent, x = treatment, fill = treatment), data = twoa) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_chick) + scale_x_discrete(limits=c("paired parents", "single mother", "single father")) + labs(title = "", x="", y="% Dry Matter") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none") #+ ggsignif::geom_signif(comparisons = list(c("single father", "paired parents")), map_signif_level = TRUE, textsize = 9) + ylim(0,35)
+asynch_a
+```
+
+```{r}
+leveneTest(percent ~ treatment, data = twoa, center="mean")
+```
+# so rank-transform better
+```{r}
+fit_a <- aov(rank(percent) ~ treatment, data = twoa)
+Anova(fit_a)
+```
+
+```{r}
+eta_squared(fit_a)
+```
+# nest-type
+```{r}
+leveneTest(percent ~ type, data = twoa, center="mean")
+```
+# so rank-tranform better
+```{r}
+t.test(percent ~ type, data = twoa, var.equal = FALSE)
+```
+
+```{r}
+cohens_d(percent ~ type, data = twoa)
+```
+
+## second hatched chicks
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+asynch_b <- ggplot(aes(y = percent, x = treatment, fill = treatment), data = twob) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_chick) + scale_x_discrete(limits=c("paired parents", "single mother", "single father")) + labs(title = "", x="", y="% Dry Matter") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) + theme(legend.position = "none") #+ ggsignif::geom_signif(comparisons = list(c("single father", "paired parents")), map_signif_level = TRUE, textsize = 9) + ylim(0,35)
+asynch_b
+```
+
+```{r}
+leveneTest(percent ~ treatment, data = twob, center="mean")
+```
+# so rank-transform better
+```{r}
+fit_b <- aov(rank(percent) ~ treatment, data = twob)
+Anova(fit_b)
+```
+```{r}
+eta_squared(fit_b)
+```
+# nest type 
+```{r}
+leveneTest(percent ~ type, data = twob, center="mean")
+```
+# so parametric fine.   
+```{r}
+t.test(percent ~ type, data = twob, var.equal = TRUE)
+```
+
+```{r}
+cohens_d(percent ~ type, data = twob)
+```
+
+### compile figures
+```{r}
+plot_grid(dryw, dryw_p, labels = "AUTO",nrow = 1, align = "hv")
+```

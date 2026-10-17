@@ -1,0 +1,101 @@
+---
+title: "parent_weight_chp3 nest-type*sex"
+author: "April Booth"
+date: "2026-08-28"
+output: html_document
+---
+```{r}
+library(tidyverse)
+library(extrafont)
+library(cowplot)
+library(car)
+library(lme4)
+library(effectsize)
+```
+```{r}
+# function to define the B3 lab theme
+theme_B3 <- function () { 
+  theme_classic() +
+    theme(
+      panel.grid.major  = element_blank(),  # remove major gridlines
+      panel.grid.minor  = element_blank(),  # remove minor gridlines
+      plot.subtitle = element_text(hjust = 0.5, face = "bold"), # center & bold
+      plot.title = element_text(hjust = 0.5, face = "bold") # center & bold 
+    )
+}
+```
+```{r figure out working directory}
+getwd()
+```
+
+```{r get datasets together}
+day4 <- read.csv("/Users/AprilBooth/Desktop/Dissertation/Chapter2_cropmilk/R_markdowns/parent_weight_d4.csv")
+day1 <- read.csv("/Users/AprilBooth/Desktop/Dissertation/Chapter2_cropmilk/R_markdowns/parent_weight_d1.csv")
+data_w <- full_join(day4, day1, by = "sample")
+```
+```{r get nest info in order}
+key <- read.csv("/Users/AprilBooth/Desktop/Dissertation/keys/parent_key.csv")
+data_w <- full_join(data_w, key, by = c("sample"))
+data_w <- na.omit(data_w)
+```
+
+```{r get difference in weight from d1 to d4}
+data_w$d <- data_w$weight_d4-data_w$weight_d1
+```
+```{r get categories for analysis}
+data_w$treatment <- as.character(data_w$treatment)
+data_w$treatment[data_w$treatment == "single female"] <- "single mother"
+data_w$treatment[data_w$treatment == "single male"] <- "single father"
+data_w$treatment[data_w$treatment == "paired female"] <- "paired mother"
+data_w$treatment[data_w$treatment == "paired male"] <- "paired father"
+#get sex category
+data_w$sex[data_w$treatment == "single mother"] <- "female"
+data_w$sex[data_w$treatment == "single father"] <- "male"
+data_w$sex[data_w$treatment == "paired mother"] <- "female"
+data_w$sex[data_w$treatment == "paired father"] <- "male"
+#get nest type category
+data_w$type[data_w$treatment == "single mother"] <- "single parent"
+data_w$type[data_w$treatment == "single father"] <- "single parent"
+data_w$type[data_w$treatment == "paired mother"] <- "paired parent"
+data_w$type[data_w$treatment == "paired father"] <- "paired parent"
+```
+
+
+##Graphing data to see how it looks:
+```{r}
+adult_weight <- ggplot(aes(y = d, x = treatment, fill=treatment), data = data_w) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_parent) +
+  labs(title = "Difference in parent weight", x="", y="difference in parent weight (grams)") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + scale_x_discrete(limits=c("paired mother","paired father", "single mother", "single father")) + theme(text=element_text(family="", size=18)) +theme(axis.text = element_text(face = "bold", color = "black",family="", size = 18)) + theme(legend.position = "none")
+adult_weight
+```
+#now do ANOVA analysis
+```{r}
+leveneTest(d ~ treatment, data = data_w, center = mean)
+```
+```{r}
+leveneTest(d ~ brood, data = data_w, center = mean)
+```
+# so parametric ok
+```{r}
+lmer_p <- lmer(d ~ treatment+brood+(1 | nestid), data = data_w, REML = TRUE)
+Anova(lmer_p, type = "II", test = "F")
+```
+
+# so no significant difference in adult bird weight across treatment groups.
+```{r eta}
+eta_squared(Anova(lmer_p, type = "II", test = "F"))
+```
+## how about by nest type or sex?
+```{r}
+leveneTest(d ~ type, data = data_w, center = mean)
+```
+```{r}
+leveneTest(d ~ sex, data = data_w, center = mean)
+```
+# so parametric ok
+```{r}
+fit_ws <- aov(d ~ type*sex, data = data_w)
+Anova(fit_ws, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_ws, type = "II"))
+```

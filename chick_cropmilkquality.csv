@@ -1,0 +1,56 @@
+﻿nestid,chick,date,parental_state,crop_milk_mass_g,color,consistency
+2945,a,2/3/20,paired,12,1.5,1
+2945,b,2/3/20,paired,6,1.5,1
+2953,a,2/10/20,paired,7,1.5,1
+2953,b,2/10/20,paired,7,1,1
+3340,a,7/5/20,paired,8,1.5,1
+3340,b,7/5/20,paired,4,1.5,1
+3368,a,7/14/20,single male,6,3,2.5
+3366,a,7/16/20,single female,13,1,1
+3461,a,8/13/20,single female,17,1.5,1
+3461,b,8/13/20,single female,6,1.5,1
+3467,a,8/14/20,single female,7,1,1
+3467,b,8/14/20,single female,7,1.5,1
+3685,a,11/20/20,single male,11,1.5,1
+3685,b,11/20/20,single male,14,1.5,1
+3695,a,12/3/20,single male,4,1.5,1.5
+3695,b,12/3/20,single male,3,1.5,1
+3696,a,12/3/20,single female,6,1,1
+3696,b,12/3/20,single female,3,1,1.5
+3725,a,12/11/20,single male,5,2,4
+3725,b,12/11/20,single male,3,2,4
+3958,a,3/24/21,paired,3,1.5,1
+3972,a,3/29/21,single female,12,1.5,1
+3972,b,3/29/21,single female,7,1.5,1
+3989,a,4/8/21,single female,10,1.5,1
+3989,b,4/8/21,single female,3,1.5,1
+4138,b,6/2/21,single female,4,1.5,1
+4141,a,6/2/21,single female,4.4,1.5,1
+4141,b,6/2/21,single female,1.71,1.5,1
+4157,a,6/7/21,paired,12.6,1.5,1
+4157,b,6/7/21,paired,11.31,1.5,1
+4139,a,6/7/21,paired,5.92,1.5,1
+4139,b,6/7/21,paired,11.33,1.5,1
+4167,a,6/21/21,single male,9,1.5,1.5
+4194,a,6/23/21,single male,4,3,4
+4194,b,6/23/21,single male,2,3,4
+4231,a,7/15/21,single male,NA,NA,NA
+4231,b,7/15/21,single male,NA,NA,NA
+4261,a,7/22/21,single male,2,2.5,1
+4261,b,7/22/21,single male,2,2.5,1
+4279,a,7/23/21,single male,0.62,1.5,1
+4279,b,7/23/21,single male,3,1.5,1
+4282,a,7/24/21,single male,0.68,1.5,1
+4287,a,7/31/21,paired,4,1.5,1
+4287,b,7/31/21,paired,1.41,1.5,1
+4281,a,7/31/21,single male,0.99,2.5,3.5
+4290,a,8/4/21,paired,14,1.5,1
+4290,b,8/4/21,paired,6,1.5,1
+4346,a,9/20/21,paired,8,2.5,1.5
+4346,b,9/20/21,paired,8,2,1.5
+4344,a,9/18/21,single female,4,1.5,1
+4344,b,9/18/21,single female,7,1.5,1
+4343,a,9/17/21,single female,15,1.5,1
+4349,a,9/21/21,paired,12,1,1
+4351,a,9/25/21,paired,5,2,1
+4351,b,9/25/21,paired,7,1,1

@@ -1,0 +1,198 @@
+---
+title: "Crop milk analysis- parents"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(extrafont)
+library(cowplot)
+library(car)
+library(lme4)
+library(effectsize)
+```
+```{r}
+# function to define the B3 lab theme
+theme_B3 <- function () { 
+  theme_classic() +
+    theme(
+      panel.grid.major  = element_blank(),  # remove major gridlines
+      panel.grid.minor  = element_blank(),  # remove minor gridlines
+      plot.subtitle = element_text(hjust = 0.5, face = "bold"), # center & bold
+      plot.title = element_text(hjust = 0.5, face = "bold") # center & bold 
+    )
+}
+```
+```{r figure out working directory}
+getwd()
+```
+
+#Get general data together:
+```{r}
+data_pw_t <- read.csv("/Users/AprilBooth/Desktop/Dissertation/Chapter2_cropmilk/R_markdowns/parent_weight_d4.csv")
+```
+```{r}
+data_pc_m <- read.csv("/Users/AprilBooth/Desktop/Dissertation/Chapter2_cropmilk/R_markdowns/parent_cropmilkquality.csv")
+```
+
+#then need to join the two data sets together
+```{r}
+data_p_combo <- right_join(data_pw_t, data_pc_m, by="sample")
+```
+#now can find percent crop weight to body weight
+```{r}
+data_p_combo$percent_w <- ((data_p_combo$crop_sac_mass_g/data_p_combo$weight_d4)*100)
+```
+
+#change parental_state descriptions
+```{r}
+data_p_combo <- select(data_p_combo, -"treatment")
+key <- read.csv("/Users/AprilBooth/Desktop/Dissertation/keys/parent_key.csv")
+data_p_combo <- left_join(data_p_combo, key, by = c("sample", "nestid"))
+#rename treatment groups
+data_p_combo$treatment[data_p_combo$treatment == "single female"] <- "single mother"
+data_p_combo$treatment[data_p_combo$treatment == "single male"] <- "single father"
+data_p_combo$treatment[data_p_combo$treatment == "paired female"] <- "paired mother"
+data_p_combo$treatment[data_p_combo$treatment == "paired male"] <- "paired father"
+#get sex category
+data_p_combo$sex[data_p_combo$treatment == "single mother"] <- "female"
+data_p_combo$sex[data_p_combo$treatment == "single father"] <- "male"
+data_p_combo$sex[data_p_combo$treatment == "paired mother"] <- "female"
+data_p_combo$sex[data_p_combo$treatment == "paired father"] <- "male"
+#get nest type category
+data_p_combo$type[data_p_combo$treatment == "single mother"] <- "single parent"
+data_p_combo$type[data_p_combo$treatment == "single father"] <- "single parent"
+data_p_combo$type[data_p_combo$treatment == "paired mother"] <- "paired parent"
+data_p_combo$type[data_p_combo$treatment == "paired father"] <- "paired parent"
+```
+# counting actual samples measured
+```{r}
+data_p_combo %>% count(treatment)
+```
+
+### Crop weight/body
+##Graphing data to see how it looks:
+```{r}
+crop_weight <- ggplot(aes(y = percent_w, x = treatment, fill= treatment), data = data_p_combo) + geom_boxplot() + scale_fill_manual(values = colors_parent) +
+  labs(title = "parent crop weight to body weight ratio", x="", y="% crop weight/body weight") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + scale_x_discrete(limits=c("paired mother","paired father", "single mother", "single father")) + theme(text=element_text(family="", size=16)) +theme(axis.text = element_text(face = "bold", color = "black",family="", size = 16)) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list(c("paired father", "single mother")), map_signif_level = TRUE, y_position = c(7), test= "wilcox.test", textsize = 9) + ggsignif::geom_signif(comparisons = list(c("paired father", "single father")), map_signif_level = TRUE, y_position = c(5.5), test = "wilcox.test", textsize = 9) + ylim(0,8)
+crop_weight
+```
+
+#now do ANOVA analysis
+```{r}
+leveneTest(percent_w ~ treatment, data = data_p_combo, center = mean)
+```
+```{r}
+leveneTest(percent_w ~ brood, data = data_p_combo, center = mean)
+```
+# so need to rank transform
+```{r}
+lmer_w <- lmer(rank(percent_w) ~ treatment+brood+(1 | nestid), data = data_p_combo, REML = TRUE)
+Anova(lmer_w, type = "II", test = "F")
+```
+# So there appears to be a significant difference between the crop weights by treatment groups. 
+```{r eta}
+eta_squared(Anova(lmer_w, type = "II", test = "F"))
+```
+###Post-hoc analysis difference between percent crop weights
+```{r}
+emmeans::emmeans(lmer_w, list(pairwise ~ treatment), adjust="tukey") 
+```
+#use emmeans, have significant difference Paired males vs Single Females, and Single Males.
+
+## Cohen's d effect size test
+#subsets of treatment groups
+```{r}
+pmom <- data_p_combo[data_p_combo$treatment == "paired mother",]
+pfath <- data_p_combo[data_p_combo$treatment == "paired father",]
+smom <- data_p_combo[data_p_combo$treatment == "single mother",]
+sfath <- data_p_combo[data_p_combo$treatment == "single father",]
+```
+
+# paired fathers v single mothers
+```{r}
+pfath_v_smom <- full_join(pfath, smom)
+cohens_d(percent_w ~ treatment, data = pfath_v_smom)
+```
+
+#paired fathers v single fathers
+```{r}
+pfath_v_sfath <- full_join(pfath, sfath)
+cohens_d(percent_w ~ treatment, data = pfath_v_sfath)
+```
+
+#nest type and sex
+```{r}
+leveneTest(percent_w ~ type, data = data_p_combo, center = mean)
+```
+```{r}
+leveneTest(percent_w ~ sex, data = data_p_combo, center = mean)
+```
+# so need to rank transform
+```{r}
+fit_pw <- aov(rank(percent_w) ~ type*sex, data = data_p_combo)
+Anova(fit_pw, type = "II")
+```
+# So there appears to be a significant difference between the crop weights by nest type and sex.
+
+```{r}
+eta_squared(Anova(fit_pw, type = "II"))
+```
+
+#omitting NA data for analyzing crop milk quality scores
+```{r}
+data_score <- data_p_combo
+data_score <- na.omit(data_score)
+```
+# count sample size for scored crop milk
+```{r}
+data_score %>% count(treatment)
+```
+
+### Crop milk color
+```{r}
+crop_color <- ggplot(aes(data_score$color, fill=treatment), data = data_score) + stat_count(width = 0.5) + scale_fill_manual(values = colors_parent) + labs(title = "Parent Crop Milk Color", x="Crop Milk Color", y="Count") + theme_B3() + theme(text=element_text(family="", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="", size = 12)) + theme(legend.position = "right")
+crop_color
+```
+#ordinal categorical data, so do fisher exact test
+#make sure color numeric, factor for some reason
+```{r}
+data_score$color <- as.numeric(as.character(data_score$color))
+```
+
+```{r}
+tbl_color <- table(data_score$treatment, data_score$color)
+tbl_color
+```
+
+```{r}
+fisher.test(tbl_color, simulate.p.value = FALSE, hybrid = TRUE)
+```
+```{r}
+cramers_v(tbl_color)
+```
+
+# so no significant differences in color.
+
+###Crop milk consistency
+
+```{r}
+crop_consistency <- ggplot(aes(data_score$consistency, fill=treatment), data = data_score) + stat_count(width = 0.5) + scale_fill_manual(values = colors_parent) + labs(title = "Parent Crop Milk Consistency", x="Crop Milk Consistency", y="Count") + theme_B3() + theme(text=element_text(family="", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="", size = 12)) + theme(legend.position = "right")
+crop_consistency
+```
+#ordinal categorical data, so do fisher exact test
+#make sure consistency is numeric
+```{r}
+tbl_consistency <- table(data_score$treatment, data_score$consistency)
+tbl_consistency
+```
+
+```{r}
+fisher.test(tbl_consistency, simulate.p.value = FALSE, hybrid = TRUE)
+```
+# effect size
+```{r}
+cramers_v(tbl_consistency)
+```
+
+# so no significant differences in crop milk consistency

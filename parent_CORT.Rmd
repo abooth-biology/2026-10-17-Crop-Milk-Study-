@@ -1,0 +1,135 @@
+---
+title: "CORT lmer version"
+author: "April Booth"
+date: "09/30/2023"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(extrafont)
+library(cowplot)
+library(car)
+library(lme4)
+library(lmerTest)
+library(effectsize)
+```
+```{r}
+# function to define the B3 lab theme
+theme_B3 <- function () { 
+  theme_classic() +
+    theme(
+      panel.grid.major  = element_blank(),  # remove major gridlines
+      panel.grid.minor  = element_blank(),  # remove minor gridlines
+      plot.subtitle = element_text(hjust = 0.5, face = "bold"), # center & bold
+      plot.title = element_text(hjust = 0.5, face = "bold") # center & bold 
+    )
+}
+```
+###Get data together
+#always check, especially when switching between work and personal laptops.
+```{r}
+getwd()
+```
+
+```{r}
+data_cort <- read.csv("/Users/AprilBooth/Desktop/Dissertation/Chapter2_cropmilk/R_markdowns/parent_CORT.csv", stringsAsFactors = FALSE)
+```
+
+# count sample sizes
+```{r}
+data_cort %>% count(treatment) 
+```
+
+###ANOVA and post-hoc analysis
+```{r}
+leveneTest(cort_ng_ml ~ treatment, data = data_cort, center=mean)
+```
+```{r}
+leveneTest(cort_ng_ml ~ brood, data = data_cort, center=mean)
+```
+# so ok to do parametric
+```{r}
+lmer_d5 <- lmer(cort_ng_ml ~ treatment+brood+(1 | nestid), data = data_cort, REML = TRUE)
+Anova(lmer_d5, type = "II", test = "F")
+```
+#so significant difference between treatment groups in regards to treatment groups and brood type 
+```{r}
+eta_squared(Anova(lmer_d5, type = "II", test = "F"))
+```
+
+# post-hoc analysis:
+```{r}
+emmeans::emmeans(lmer_d5, list(pairwise ~ treatment), adjust="tukey") 
+```
+# no significant difference after post-hoc analysis.
+
+```{r add details to brood category}
+data_cort$brood[data_cort$brood == "one"] <- "one-chick nest"
+data_cort$brood[data_cort$brood == "two"] <- "two-chick nest"
+```
+
+
+```{r}
+brood_d5 <- ggplot(aes(y = cort_ng_ml,x = brood, fill=type), data = data_cort) + geom_boxplot(outlier.shape = NA) +
+  labs(title = "parent circulating CORT by brood size", x="", y="Corticosterone ng/mL") + scale_fill_manual(values = colors_parent_pool) + theme_B3() + theme(text=element_text(family="Arial", size=12)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 12)) +  geom_point(pch = 21, position = position_jitterdodge()) + theme(legend.position = "right") + ylim(0,27) + ggsignif::geom_signif(comparisons = list(c("one-chick nest", "two-chick nest")), map_signif_level = TRUE, y_position = c(20), textsize = 9)
+brood_d5
+```
+# so no significant difference by treatment group when do post-hoc, but there is still a significant difference by brood size, with parents rearing two brood nests having a higher baseline CORT than one brood nesting parents. It looks like there might be a difference between paired parents and single parents for two chick nests.  
+
+# nest type and sex?
+```{r}
+leveneTest(cort_ng_ml ~ type, data = data_cort, center=mean)
+```
+```{r}
+leveneTest(cort_ng_ml ~ sex, data = data_cort, center=mean)
+```
+# so should rank transform
+```{r}
+fit_cort_d5_s <- aov(rank(cort_ng_ml) ~ type*sex, data = data_cort)
+Anova(fit_cort_d5_s, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_cort_d5_s, type = "II"))
+```
+#no significant difference be brood or nest-type when analyzing one-chick and two-chick nests together. 
+
+#two chick nest analysis:
+```{r}
+two <-subset(data_cort, brood == "two-chick nest")
+```
+```{r}
+leveneTest(cort_ng_ml ~ type, data = two, center=mean)
+```
+```{r}
+leveneTest(cort_ng_ml ~ sex, data = two, center=mean)
+```
+# so parametric okay
+```{r}
+fit_two <- aov(cort_ng_ml ~ type*sex, data = two)
+Anova(fit_two, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_two, type = "II"))
+```
+
+# one chick nest analysis
+```{r}
+one <-subset(data_cort, brood == "one-chick nest")
+```
+
+```{r}
+leveneTest(cort_ng_ml ~ type, data = one, center=mean)
+```
+```{r}
+leveneTest(cort_ng_ml ~ sex, data = one, center=mean)
+```
+# so should rank transform
+```{r}
+fit_one <- aov(rank(cort_ng_ml) ~ type*sex, data = one)
+Anova(fit_one, type = "II")
+```
+```{r}
+eta_squared(Anova(fit_one, type = "II"))
+```
+# no significant difference between nest-type for one-chick nests. 

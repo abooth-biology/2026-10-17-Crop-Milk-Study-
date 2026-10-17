@@ -1,0 +1,256 @@
+---
+title: "chick size crop milk study"
+author: "April Booth"
+date: "2026-10-05"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+```{r}
+library(tidyverse)
+library(extrafont)
+library(cowplot)
+library(car)
+library(lme4)
+library(effectsize)
+```
+```{r}
+# function to define the B3 lab theme
+theme_B3 <- function () { 
+  theme_classic() +
+    theme(
+      panel.grid.major  = element_blank(),  # remove major gridlines
+      panel.grid.minor  = element_blank(),  # remove minor gridlines
+      plot.subtitle = element_text(hjust = 0.5, face = "bold"), # center & bold
+      plot.title = element_text(hjust = 0.5, face = "bold") # center & bold 
+    )
+}
+```
+```{r figure out working directory}
+getwd()
+```
+```{r}
+key <- read.csv("/Users/AprilBooth/Desktop/Dissertation/keys/chick_key.csv")
+```
+
+```{r get dataset together}
+day3 <- read.csv("/Users/AprilBooth/Desktop/Dissertation/Chapter2_cropmilk/R_markdowns/chick_size_d3.csv")
+day3$weight_gm <- as.numeric(day3$weight_gm)
+day3$size3 <- (day3$weight_gm/day3$tarsus)
+key <- select(key, "nestid", "brood")
+day3 <- left_join(day3, key, by = "nestid")
+day3$treatment[day3$treatment == "paired"] <- "paired parents"
+day3$treatment[day3$treatment == "single female"] <- "single mother"
+day3$treatment[day3$treatment == "single male"] <- "single father"
+day3$type[day3$treatment == "paired parents"] <- "paired parents"
+day3$type[day3$treatment == "single mother"] <- "single parent"
+day3$type[day3$treatment == "single father"] <- "single parent"
+day3$chick_s[day3$chick == "a"] <- "first hatched"
+day3$chick_s[day3$chick == "b"] <- "second hatched"
+day3 <- select(day3, "nestid", "treatment", "chick", "size3", "brood", "type", "chick_s")
+day3 <- na.omit(day3)
+```
+
+
+```{r get average for two chick nests}
+one <- day3[day3$brood == "one",]
+# will remove second hatched chick that died
+one <- one[-c(10), ]
+two <- day3[day3$brood == "two",]
+twoa <- two[two$chick == "a",]
+twob <- two[two$chick == "b",]
+two <- full_join(twoa, twob, by = "nestid")
+two$size3 <- (two$size3.x + two$size3.y)/2
+two$brood <- two$brood.x
+two$treatment <- two$treatment.x
+two$type[two$treatment == "paired parents"] <- "paired parents"
+two$type[two$treatment == "single mother"] <- "single parent"
+two$type[two$treatment == "single father"] <- "single parent"
+two <- select(two, "nestid", "brood", "size3", "treatment", "type")
+```
+# counting two-chick and one-chick broods
+```{r}
+twoa %>% count(treatment)
+```
+```{r}
+one %>% count(treatment)
+```
+
+```{r one and two data sets}
+data_size3 <- full_join(one, two)
+data_size3 <- select(data_size3, "nestid", "brood", "size3", "treatment", "type")
+```
+
+##Graphing data to see how it looks:
+```{r}
+chick_size <- ggplot(aes(y = size3, x = treatment, fill=treatment), data = data_size3) + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors_chick) +
+  labs(title = "Average chick size (weight/tarsus ratio)",subtitle = "", x="", y="weight/tarsus day 3 post-hatch") + geom_point(pch = 21, position = position_jitterdodge()) + theme_B3() + scale_x_discrete(limits=c("paired parents", "single mother", "single father")) + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 14)) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list(c("single father","paired parents")), map_signif_level = TRUE , y_position = c(5), textsize = 9) + ylim(1,5.6)
+chick_size
+```
+#now do ANOVA analysis
+```{r}
+leveneTest(size3 ~ treatment, data = data_size3, center = mean)
+```
+```{r}
+leveneTest(size3 ~ brood, data = data_size3, center = mean)
+```
+# so parametric ok
+```{r}
+fit_c <- aov(size3 ~ treatment+brood , data = data_size3)
+Anova(fit_c, type = "II")
+```
+
+```{r}
+eta_squared(Anova(fit_c, type = "II"))
+```
+```{r}
+TukeyHSD(fit_c)
+```
+# so significant difference single fathered chicks versus paired parented nests.
+# effect size for comparisons
+# make subsets of data
+```{r}
+paired <- data_size3[data_size3$treatment == "paired parents",]
+s_mom <- data_size3[data_size3$treatment == "single mother",]
+s_fath <- data_size3[data_size3$treatment == "single father",]
+```
+
+# paired parented v single fathered
+```{r}
+p_vs_sfath <- full_join(paired, s_fath)
+cohens_d(size3 ~ treatment, data = p_vs_sfath)
+```
+
+
+# what about by nest type?
+```{r}
+leveneTest(size3 ~ type, data = data_size3, center = mean)
+```
+# so parametric ok
+```{r}
+fit_cs <- aov(size3 ~ type+brood , data = data_size3)
+Anova(fit_cs, type = "II")
+```
+
+```{r}
+eta_squared(Anova(fit_cs, type = "II"))
+```
+# so single parented chicks are smaller than paired parented chicks in general as well. 
+
+# asychronous nests
+#confirm if first and second hatched chicks are significantly different
+```{r}
+asynch_a <- ggplot(aes(y = size3, x = treatment, fill=treatment), data = twoa) + geom_boxplot(outlier.shape = NA) +
+  labs(title = "Chick size of first-hatched chicks (two-chick nests)", x="", y="weight/tarsus day 3 post-hatch") + scale_fill_manual(values = colors_chick) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 14)) +  geom_point(pch = 21, position = position_jitterdodge()) + theme(legend.position = "none") + scale_x_discrete(limits=c("paired parents", "single mother", "single father")) + ylim(1,5.5)
+asynch_a
+```
+```{r}
+leveneTest(size3 ~ treatment, data = twoa, center = mean)
+```
+
+```{r}
+fit_a <- aov(size3 ~ treatment, data = twoa)
+Anova(fit_a)
+```
+```{r}
+eta_squared(fit_a)
+```
+# so no significant difference between treatment groups in terms of first hatched chicks of two chick nests. 
+# nest type?
+```{r}
+leveneTest(size3 ~ type, data = twoa, center = mean)
+```
+```{r}
+t.test(size3 ~ type, data = twoa, var.equal = TRUE)
+```
+# cohen's d
+```{r}
+cohens_d(size3 ~ type, data = twoa)
+```
+
+```{r}
+asynch_b <- ggplot(aes(y = size3, x = treatment, fill=treatment), data = twob) + geom_boxplot(outlier.shape = NA) +
+  labs(title = "Chick size of second-hatched chicks (two-chick nests)",subtitle = "", x="", y="weight/tarsus day 3 post-hatch") + scale_fill_manual(values = colors_chick) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 14)) +  geom_point(pch = 21, position = position_jitterdodge()) + theme(legend.position = "none") + ggsignif::geom_signif(comparisons = list(c("paired parents", "single father")), map_signif_level = TRUE, y_position = c(4.25), textsize = 9) + ggsignif::geom_signif(comparisons = list(c("paired parents", "single mother")), map_signif_level = TRUE, y_position = c(4.8), textsize = 9) + scale_x_discrete(limits=c("paired parents", "single mother", "single father")) + ylim(1,5.5)
+asynch_b
+```
+```{r}
+leveneTest(size3 ~ treatment, data = twob, center = mean)
+```
+#so parametric fine. 
+```{r}
+fit_b <- aov(size3 ~ treatment, data = twob)
+Anova(fit_b, type= "III")
+```
+
+```{r}
+eta_squared(fit_b)
+```
+```{r}
+TukeyHSD(fit_b)
+```
+
+# cohen's d
+```{r}
+paired <- twob[twob$treatment == "paired parents",]
+smom <- twob[twob$treatment == "single mother",]
+sfath <- twob[twob$treatment == "single father",]
+```
+# paired parents vs single mothers
+```{r}
+paired_vs_smom <- full_join(paired, smom)
+cohens_d(size3 ~ treatment, data = paired_vs_smom)
+```
+
+# paired parents vs single fathers
+```{r}
+paired_vs_sfath <- full_join(paired, sfath)
+cohens_d(size3 ~ treatment, data = paired_vs_sfath)
+```
+# nest type?
+```{r}
+leveneTest(size3 ~ type, data = twob, center = mean)
+```
+```{r}
+t.test(size3 ~ type, data = twob, var.equal = TRUE)
+```
+# cohen's d
+```{r}
+cohens_d(size3 ~ type, data = twob)
+```
+
+# what about one chick nests?
+
+```{r}
+asynch_one <- ggplot(aes(y = size3, x = treatment, fill=treatment), data = one) + geom_boxplot(outlier.shape = NA) +
+  labs(title = "Chick size of one-chick nests", x="", y="weight/tarsus day 3 post-hatch") + scale_fill_manual(values = colors_chick) + theme_B3() + theme(text=element_text(family="Arial", size=14)) +theme(axis.text = element_text(face = "bold", color = "black",family="Arial", size = 14)) +  geom_point(pch = 21, position = position_jitterdodge()) + theme(legend.position = "none") + scale_x_discrete(limits=c("paired parents", "single mother", "single father")) + ylim(1,5.5)
+asynch_one
+```
+
+```{r}
+leveneTest(size3 ~ treatment, data = one, center = mean)
+```
+
+```{r}
+fit_one <- aov(size3 ~ treatment, data = one)
+Anova(fit_one)
+```
+```{r}
+eta_squared(fit_one)
+```
+# no significant difference between treatment groups for first hatched chicks, though sample sizes are rather small.
+# nest type?
+```{r}
+leveneTest(size3 ~ type, data = one, center = mean)
+```
+```{r}
+t.test(size3 ~ type, data = one, var.equal = TRUE)
+```
+# cohen's d
+```{r}
+cohens_d(size3 ~ type, data = one)
+```
+
+###compiling figures
+```{r}
+plot_grid(chick_weight, asynch_a, asynch_b, asynch_one,rows = 2, labels = "AUTO", align = "hv")
+```

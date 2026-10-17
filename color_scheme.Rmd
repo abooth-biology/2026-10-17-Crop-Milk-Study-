@@ -1,0 +1,65 @@
+---
+title: "Color Plot for figures"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(cowplot)
+```
+
+```{r parents}
+## specify order
+levels_parent <- c("paired mother", "single mother", "paired father",  "single father" )
+
+## pick colors using http://colorbrewer2.org/
+colors_parent <- c("paired mother" = "#f7f7f7", 
+               "single mother" = "#f0f0f0", 
+               "paired father" = "#d9d9d9",
+               "single father" = "#bdbdbd")
+```
+
+```{r parents pooling}
+## specify order
+levels_parent_pool <- c("paired parent","single parent" )
+
+## pick colors using http://colorbrewer2.org/
+colors_parent_pool <- c("paired parent" = "#969696", 
+               "single parent" = "#737373")
+```
+
+```{r parents cumulative time- mainly for behavior}
+## specify order
+levels_parent_cumm <- c("paired","single mother", "single father" )
+
+## pick colors using http://colorbrewer2.org/
+colors_parent_cumm <- c("paired parents" = "#969696", 
+               "single mother" = "#f0f0f0",
+               "single father" = "#bdbdbd")
+```
+```{r cumulative time - parents pooling by nest type}
+## specify order
+levels_parent_cpool <- c("paired parents","single parent" )
+
+## pick colors using http://colorbrewer2.org/
+colors_parent_cpool <- c("paired parents" = "#969696", 
+               "single parent" = "#737373")
+```
+```{r chicks}
+## specify order
+levels_chick <- c("paired parents", "single mother","single father" )
+
+## pick colors using http://colorbrewer2.org/
+colors_chick <- c("paired parents" = "#969696", 
+               "single mother" = "#f0f0f0", 
+               "single father" = "#bdbdbd")
+```
+
+```{r chicks pooling}
+## specify order
+levels_chick_pool <- c("paired parents", "single parent" )
+
+## pick colors using http://colorbrewer2.org/
+colors_chick_pool <- c("paired parents" = "#969696", 
+               "single parent" = "#737373")
+```
